@@ -1,0 +1,19 @@
+{
+  "name": "poetry-scanner-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "start": "npx serve public -l 4173",
+    "check": "node scripts/check-scan.mjs"
+  },
+  "dependencies": {
+    "@netlify/functions": "^5.1.2",
+    "cmu-pronouncing-dictionary": "^3.0.0"
+  },
+  "devDependencies": {
+    "netlify-cli": "^24.0.1",
+    "serve": "^14.2.4"
+  }
+}

@@ -1,0 +1,1615 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scansion | Poetry Meter and Scansion Analyzer</title>
+    <meta
+      name="description"
+      content="Scansion is a poetry meter and scansion analyzer that marks stress patterns line by line, compares alternate readings, and reveals relative confidence at a glance."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="application-name" content="Scansion" />
+    <meta name="apple-mobile-web-app-title" content="Scansion" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Scansion" />
+    <meta property="og:title" content="Scansion | Poetry Meter and Scansion Analyzer" />
+    <meta
+      property="og:description"
+      content="Analyze poetic meter, inspect alternate scans, and compare relative confidence with a minimal line-by-line scansion interface."
+    />
+    <meta property="og:image" content="/social-card.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:alt" content="Scansion, a poetry meter and scansion analyzer." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Scansion | Poetry Meter and Scansion Analyzer" />
+    <meta
+      name="twitter:description"
+      content="Analyze poetic meter, inspect alternate scans, and compare relative confidence with a minimal line-by-line scansion interface."
+    />
+    <meta name="twitter:image" content="/social-card.svg" />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --bg-strong: #ffffff;
+        --surface: #ffffff;
+        --surface-strong: #ffffff;
+        --fg: #181612;
+        --muted: #6f695e;
+        --muted-strong: #4b463f;
+        --line: rgba(24, 22, 18, 0.12);
+        --line-strong: rgba(24, 22, 18, 0.18);
+        --accent: #24485a;
+        --annotation: #e13a2d;
+        --annotation-break: #a39a91;
+        --danger: #8b2d2d;
+        --shadow: 0 18px 42px rgba(27, 23, 16, 0.08);
+        --ui-font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+        --poem-font: "Constantia", "Cambria", Georgia, serif;
+        --annotation-font: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        --poem-size: clamp(22px, 2.15vw, 32px);
+        --poem-leading: 1.62;
+        --drawer-size: 18px;
+        --drawer-leading: 1.58;
+        --mono-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        background: #ffffff;
+        color: var(--fg);
+        font-family: var(--ui-font);
+      }
+
+      button,
+      textarea,
+      input {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      main {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 24px 24px 64px;
+      }
+
+      .shell {
+        min-height: calc(100vh - 88px);
+        display: grid;
+        gap: 20px;
+      }
+
+      .toolbar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: #ffffff;
+      }
+
+      body[data-mode="scan"] .toolbar {
+        display: flex;
+      }
+
+      .toolbar-meta,
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .meta-chip,
+      .chip-button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: #ffffff;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .meta-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+
+      .tag-bar,
+      .candidate-bar,
+      .mini-link-bar {
+        position: relative;
+        overflow: hidden;
+        background: rgba(24, 22, 18, 0.08);
+      }
+
+      .tag-bar > span,
+      .candidate-bar > span,
+      .mini-link-bar > span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: var(--fg);
+      }
+
+      .chip-button,
+      .text-button,
+      .scan-button,
+      .drawer-close,
+      .line-tag,
+      .drawer-link {
+        cursor: pointer;
+        transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+      }
+
+      .chip-button,
+      .text-button,
+      .drawer-close {
+        appearance: none;
+        background: transparent;
+      }
+
+      .chip-button:hover,
+      .text-button:hover,
+      .drawer-close:hover {
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.74);
+      }
+
+      .chip-button:focus-visible,
+      .text-button:focus-visible,
+      .scan-button:focus-visible,
+      .drawer-close:focus-visible,
+      .line-tag:focus-visible,
+      .drawer-link:focus-visible {
+        outline: 2px solid rgba(36, 72, 90, 0.32);
+        outline-offset: 2px;
+      }
+
+      .text-button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .editor-shell,
+      .poem-view {
+        min-height: calc(100vh - 150px);
+      }
+
+      .editor-shell {
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+
+      body[data-mode="scan"] .editor-shell {
+        display: none;
+      }
+
+      .editor-canvas {
+        position: relative;
+        min-height: 62vh;
+        padding: 20px 0 12px;
+      }
+
+      .editor-grid {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        gap: 24px;
+        align-items: start;
+      }
+
+      .editor-line-numbers {
+        padding-top: 3px;
+      }
+
+      .editor-line-number-row {
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+        line-height: calc(var(--poem-size) * var(--poem-leading));
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        text-align: right;
+      }
+
+      .editor {
+        width: 100%;
+        min-height: 62vh;
+        border: 0;
+        outline: 0;
+        resize: none;
+        overflow: hidden;
+        background: transparent;
+        color: var(--fg);
+        caret-color: var(--accent);
+        font-family: var(--poem-font);
+        font-size: var(--poem-size);
+        line-height: var(--poem-leading);
+        letter-spacing: -0.022em;
+        padding: 0;
+        scrollbar-width: none;
+      }
+
+      .editor::placeholder {
+        color: rgba(24, 22, 18, 0.34);
+      }
+
+      .editor::-webkit-scrollbar {
+        display: none;
+      }
+
+      .editor-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        padding-top: 12px;
+      }
+
+      .scan-button {
+        appearance: none;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        font-size: 14px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(6px);
+      }
+
+      .scan-button.visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .scan-button[disabled],
+      .text-button[disabled],
+      .chip-button[disabled] {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .poem-view {
+        display: none;
+        align-content: start;
+      }
+
+      body[data-mode="scan"] .poem-view {
+        display: block;
+      }
+
+      .poem-grid {
+        border-top: 0;
+      }
+
+      .line-row {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        gap: 24px;
+        padding: 0;
+        border-bottom: 0;
+        align-items: start;
+      }
+
+      .line-row.blank {
+        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        gap: 24px;
+        padding: 0;
+        border-bottom: 0;
+      }
+
+      .line-row.blank .line-spacer {
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+      }
+
+      .line-number {
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+        line-height: calc(var(--poem-size) * var(--poem-leading));
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        text-align: right;
+      }
+
+      .line-content {
+        min-width: 0;
+        display: block;
+      }
+
+      .annotated-line {
+        position: relative;
+        font-family: var(--poem-font);
+        font-size: var(--poem-size);
+        line-height: var(--poem-leading);
+        letter-spacing: -0.022em;
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+      }
+
+      .annotated-line.drawer-annotated {
+        font-size: var(--drawer-size);
+        line-height: var(--drawer-leading);
+        letter-spacing: -0.015em;
+        min-height: calc(var(--drawer-size) * var(--drawer-leading));
+      }
+
+      .annotated-text {
+        position: relative;
+        z-index: 1;
+        white-space: pre-wrap;
+      }
+
+      .annotation-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .annotated-mark {
+        position: absolute;
+        top: 1px;
+        display: inline-block;
+        z-index: 0;
+        transform: translateX(-50%);
+        font-family: var(--annotation-font);
+        line-height: 1;
+        letter-spacing: 0;
+        pointer-events: none;
+      }
+
+      .annotated-mark.diff::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 52%;
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: rgba(239, 214, 96, 0.78);
+        transform: translate(-50%, -50%);
+        z-index: -1;
+      }
+
+      .annotated-mark.stressed {
+        color: var(--annotation);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .annotated-mark.unstressed {
+        color: var(--annotation);
+        font-size: 11px;
+        font-weight: 900;
+        transform: translateX(-50%) scaleX(3.3) scaleY(0.88);
+        transform-origin: center center;
+      }
+
+      .annotated-mark.break {
+        color: var(--annotation-break);
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .annotated-mark.unstressed.diff::before {
+        width: 18px;
+        height: 10px;
+      }
+
+      .annotated-mark.break.diff::before {
+        width: 8px;
+        height: 15px;
+      }
+
+      .drawer-annotated .annotated-mark.stressed {
+        font-size: 12px;
+      }
+
+      .drawer-annotated .annotated-mark.unstressed {
+        font-size: 10px;
+      }
+
+      .drawer-annotated .annotated-mark.break {
+        font-size: 11px;
+      }
+
+      .line-meta {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+      }
+
+      .line-status {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-top: 8px;
+      }
+
+      .line-spinner {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        border: 1.5px solid rgba(24, 22, 18, 0.12);
+        border-top-color: rgba(24, 22, 18, 0.42);
+        animation: spin 700ms linear infinite;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      .line-tag {
+        width: 100%;
+        appearance: none;
+        border: 0;
+        padding: 6px 0 0;
+        background: transparent;
+        text-align: left;
+        display: grid;
+        gap: 8px;
+      }
+
+      .tag-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .line-tag:hover .tag-label {
+        color: var(--accent);
+      }
+
+      .line-tag:hover .rhyme-letter {
+        color: var(--accent);
+      }
+
+      .rhyme-letter {
+        min-width: 1.25em;
+        color: var(--muted-strong);
+        font-size: 15px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        flex: 0 0 auto;
+      }
+
+      .tag-label {
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .tag-bar {
+        width: 100%;
+        height: 4px;
+      }
+
+      .scheme-overall {
+        font-size: 17px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .scheme-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .scheme-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 13px;
+      }
+
+      .scheme-row strong {
+        font-size: 14px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .error {
+        min-height: 24px;
+        color: var(--danger);
+        font-size: 14px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(24, 22, 18, 0.22);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+        z-index: 39;
+      }
+
+      .drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: min(500px, 100vw);
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        border-left: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        transform: translateX(100%);
+        transition: transform 220ms ease;
+        z-index: 40;
+      }
+
+      body.drawer-open .drawer-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      body.drawer-open .drawer {
+        transform: translateX(0);
+      }
+
+      .drawer-header {
+        display: grid;
+        gap: 12px;
+        padding: 24px 24px 18px;
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .drawer-header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .drawer-kicker {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .drawer-close {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 11px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .drawer-title {
+        margin: 0;
+        font-family: var(--poem-font);
+        font-size: 28px;
+        line-height: 1.28;
+        letter-spacing: -0.02em;
+      }
+
+      .drawer-subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .drawer-body {
+        overflow: auto;
+        display: grid;
+        align-content: start;
+        gap: 16px;
+        padding: 20px 24px 28px;
+      }
+
+      .panel,
+      .candidate-card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: #ffffff;
+      }
+
+      .panel {
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .panel h3,
+      .candidate-card h3 {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .panel p {
+        margin: 0;
+        color: var(--fg);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .mini-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .mini-stat {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .mini-stat strong {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .candidate-card {
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .candidate-card.primary {
+        background: var(--surface-strong);
+        border-color: var(--line-strong);
+      }
+
+      .candidate-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .candidate-title-wrap {
+        display: grid;
+        gap: 6px;
+      }
+
+      .candidate-rank {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .candidate-title {
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .candidate-metrics {
+        width: 112px;
+        padding-top: 4px;
+      }
+
+      .candidate-bar {
+        width: 100%;
+        height: 4px;
+      }
+
+      .candidate-note {
+        margin: 0;
+        color: var(--muted-strong);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .drawer-link {
+        appearance: none;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--fg);
+        font-family: inherit;
+        font-size: 15px;
+        line-height: 1.5;
+        text-align: left;
+        display: grid;
+        gap: 8px;
+      }
+
+      .drawer-link:hover {
+        color: var(--accent);
+      }
+
+      .drawer-link-copy {
+        display: block;
+      }
+
+      .mini-link-bar {
+        width: 100%;
+        height: 4px;
+      }
+
+      .empty-panel {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      @media (max-width: 960px) {
+        main {
+          padding: 18px 18px 48px;
+        }
+
+        .editor-grid,
+        .line-row {
+          grid-template-columns: 44px minmax(0, 1fr);
+          gap: 16px;
+        }
+
+        .line-row.blank {
+          grid-template-columns: 44px minmax(0, 1fr);
+        }
+
+        .line-meta {
+          grid-column: 2;
+          justify-content: flex-start;
+        }
+
+        .line-tag {
+          max-width: 280px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        :root {
+          --poem-size: clamp(20px, 6.6vw, 28px);
+        }
+
+        .toolbar {
+          padding: 12px;
+          flex-direction: column;
+        }
+
+        .toolbar-meta,
+        .toolbar-actions {
+          width: 100%;
+        }
+
+        .editor {
+          min-height: 56vh;
+        }
+
+        .editor-grid {
+          grid-template-columns: 44px minmax(0, 1fr);
+          gap: 16px;
+        }
+
+        .drawer {
+          width: 100vw;
+        }
+
+        .drawer-title {
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body data-mode="edit">
+    <main>
+      <section class="shell">
+        <section class="editor-shell">
+          <div class="editor-canvas">
+            <div class="editor-grid">
+              <div id="editorLineNumbers" class="editor-line-numbers" aria-hidden="true"></div>
+              <textarea id="poemInput" class="editor" spellcheck="false" aria-label="Paste poem" placeholder="Paste a poem"></textarea>
+              <div aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="editor-actions">
+            <button id="scanButton" class="scan-button" type="button">Scan</button>
+          </div>
+        </section>
+
+        <section id="poemView" class="poem-view" aria-live="polite"></section>
+        <header class="toolbar">
+          <div class="toolbar-meta">
+            <button id="overviewButton" class="chip-button" type="button">Overview</button>
+            <div class="meta-chip">
+              <span>Overall</span>
+              <strong id="overallMeter">-</strong>
+            </div>
+          </div>
+
+          <div class="toolbar-actions">
+            <button id="editButton" class="text-button" type="button">Edit poem</button>
+          </div>
+        </header>
+        <div id="error" class="error" role="alert"></div>
+      </section>
+    </main>
+
+    <div id="drawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
+
+    <aside id="drawer" class="drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div class="drawer-header-top">
+          <div id="drawerKicker" class="drawer-kicker">Overview</div>
+          <button id="drawerClose" class="drawer-close" type="button">Close</button>
+        </div>
+
+        <h2 id="drawerTitle" class="drawer-title">Scansion details</h2>
+        <p id="drawerSubtitle" class="drawer-subtitle"></p>
+      </div>
+
+      <div id="drawerBody" class="drawer-body"></div>
+    </aside>
+
+    <script>
+      const input = document.getElementById('poemInput');
+      const editorLineNumbers = document.getElementById('editorLineNumbers');
+      const scanButton = document.getElementById('scanButton');
+      const editButton = document.getElementById('editButton');
+      const overviewButton = document.getElementById('overviewButton');
+      const poemView = document.getElementById('poemView');
+      const errorBox = document.getElementById('error');
+      const overallMeter = document.getElementById('overallMeter');
+      const drawer = document.getElementById('drawer');
+      const drawerBackdrop = document.getElementById('drawerBackdrop');
+      const drawerClose = document.getElementById('drawerClose');
+      const drawerKicker = document.getElementById('drawerKicker');
+      const drawerTitle = document.getElementById('drawerTitle');
+      const drawerSubtitle = document.getElementById('drawerSubtitle');
+      const drawerBody = document.getElementById('drawerBody');
+
+      const state = {
+        analysis: null,
+        scan: {
+          id: 0,
+          controller: null,
+          phase: 'idle'
+        },
+        drawer: {
+          open: false,
+          mode: 'overview',
+          lineIndex: null
+        }
+      };
+
+      input.addEventListener('input', () => {
+        syncEditorState();
+        renderEditorLineNumbers();
+        autoResizeInput();
+      });
+
+      scanButton.addEventListener('click', () => runScan());
+      editButton.addEventListener('click', () => {
+        closeDrawer();
+        setMode('edit');
+        requestAnimationFrame(() => input.focus());
+      });
+      overviewButton.addEventListener('click', () => openOverviewDrawer());
+      drawerBackdrop.addEventListener('click', () => closeDrawer());
+      drawerClose.addEventListener('click', () => closeDrawer());
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeDrawer();
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        if (document.body.dataset.mode === 'scan') {
+          hydrateAnnotatedLines(poemView);
+        }
+
+        if (state.drawer.open) {
+          hydrateAnnotatedLines(drawerBody);
+        }
+      });
+
+      syncEditorState();
+      renderEditorLineNumbers();
+      autoResizeInput();
+      setMode('edit');
+      overviewButton.disabled = true;
+
+      async function runScan() {
+        const poem = normalizePoem(input.value);
+        if (!poem.trim()) return;
+
+        const controller = new AbortController();
+        const scanId = state.scan.id + 1;
+        state.scan.id = scanId;
+        state.scan.controller = controller;
+
+        state.analysis = createProgressAnalysis(poem);
+        setMode('scan');
+        renderToolbar(state.analysis);
+        renderPoem(state.analysis);
+        closeDrawer({ keepState: false });
+
+        setLoadingPhase('scanning');
+        errorBox.textContent = '';
+
+        try {
+          const response = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ poem, includeSummary: true, stream: true }),
+            signal: controller.signal
+          });
+
+          const contentType = response.headers.get('content-type') || '';
+
+          if (!response.ok) {
+            const data = await readJsonResponse(response);
+            throw new Error(data.error || 'Scan failed.');
+          }
+
+          if (contentType.includes('application/x-ndjson') && response.body) {
+            await consumeProgressStream(response, scanId);
+          } else {
+            const data = await readJsonResponse(response);
+            applyCompleteAnalysis({ ...data, complete: true, summaryPending: false }, scanId);
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          errorBox.textContent = error.message || 'Something went wrong.';
+        } finally {
+          if (scanId === state.scan.id) {
+            state.scan.controller = null;
+            if (state.scan.phase !== 'idle') {
+              setLoadingPhase('idle');
+            }
+          }
+        }
+      }
+
+      function setLoadingPhase(phase) {
+        state.scan.phase = phase;
+
+        const isBusy = phase === 'scanning' || phase === 'finishing';
+        input.readOnly = isBusy;
+        scanButton.disabled = isBusy;
+        overviewButton.disabled = phase === 'scanning' || !state.analysis?.complete;
+        editButton.disabled = isBusy;
+
+        if (phase === 'scanning') {
+          scanButton.textContent = 'Scanning';
+          return;
+        }
+
+        if (phase === 'finishing') {
+          scanButton.textContent = 'Finishing';
+          return;
+        }
+
+        scanButton.textContent = 'Scan';
+      }
+
+      function setMode(mode) {
+        document.body.dataset.mode = mode;
+      }
+
+      function syncEditorState() {
+        const hasText = input.value.trim().length > 0;
+        scanButton.classList.toggle('visible', hasText);
+      }
+
+      function renderEditorLineNumbers() {
+        const rawLines = input.value.split('\n');
+        const lines = rawLines.length ? rawLines : [''];
+        let countedLines = 0;
+
+        editorLineNumbers.innerHTML = lines.map((line) => {
+          if (!line.trim()) {
+            return '<div class="editor-line-number-row"></div>';
+          }
+
+          countedLines += 1;
+          return `<div class="editor-line-number-row">${countedLines}</div>`;
+        }).join('');
+      }
+
+      function autoResizeInput() {
+        input.style.height = 'auto';
+        input.style.height = `${Math.max(420, input.scrollHeight)}px`;
+      }
+
+      function normalizePoem(value) {
+        return String(value || '').replace(/\r\n/g, '\n').trimEnd();
+      }
+
+      function createProgressAnalysis(poem) {
+        const lines = normalizePoem(poem).split('\n').map((text, index) => ({
+          index,
+          text,
+          blank: text.trim().length === 0,
+          pending: text.trim().length > 0,
+          tag: '',
+          confidence: 0,
+          scans: [],
+          tokens: []
+        }));
+
+        return {
+          poem: normalizePoem(poem),
+          overallMeter: 'Scanning...',
+          stanzaResults: [],
+          rhyme: {
+            overallScheme: '',
+            stanzas: [],
+            lines: []
+          },
+          lines,
+          diagnostics: {
+            averageLineConfidence: 0,
+            stanzaCount: 0,
+            lineCount: lines.filter((line) => !line.blank).length,
+            heuristicWords: []
+          },
+          summary: '',
+          complete: false,
+          summaryPending: true
+        };
+      }
+
+      function renderToolbar(data) {
+        overallMeter.textContent = data.complete ? (data.overallMeter || 'Mixed meter') : 'Scanning...';
+        overviewButton.disabled = state.scan.phase === 'scanning' || !data.complete;
+      }
+
+      function renderPoem(data) {
+        let countedLines = 0;
+
+        const rows = data.lines.map((line) => {
+          if (line.blank) {
+            return `
+              <div class="line-row blank" aria-hidden="true">
+                <div class="line-number"></div>
+                <div class="line-spacer"></div>
+              </div>
+            `;
+          }
+
+          countedLines += 1;
+          return buildLineRowMarkup(line, countedLines);
+        });
+
+        poemView.innerHTML = `<div class="poem-grid">${rows.join('')}</div>`;
+        hydrateAnnotatedLines(poemView);
+        bindPoemLineButtons(poemView);
+      }
+
+      function buildLineRowMarkup(line, lineNumber) {
+        if (line.pending) {
+          return `
+            <article class="line-row" data-line-index="${line.index}">
+              <div class="line-number">${lineNumber}</div>
+              <div class="line-content">
+                ${createAnnotatedLineMarkup(line.text, '')}
+              </div>
+              <div class="line-meta">
+                <div class="line-status" aria-live="polite">
+                  <span class="line-spinner" aria-hidden="true"></span>
+                  <span class="sr-only">Scanning line</span>
+                </div>
+              </div>
+            </article>
+          `;
+        }
+
+        const primary = line.scans?.[0] || {};
+        const combined = getCombinedConfidence(primary, line.confidence ?? primary.confidence);
+        const rhymeLetter = line.rhymeLetter
+          ? `<span class="rhyme-letter" aria-label="Rhyme scheme ${escapeHtml(line.rhymeLetter)}">${escapeHtml(line.rhymeLetter)}</span>`
+          : '';
+
+        return `
+          <article class="line-row" data-line-index="${line.index}">
+            <div class="line-number">${lineNumber}</div>
+            <div class="line-content">
+              ${createAnnotatedLineMarkup(line.text, primary.displayGuide || '')}
+            </div>
+            <div class="line-meta">
+              <button class="line-tag" type="button" data-open-line="${line.index}">
+                <span class="tag-head">
+                  ${rhymeLetter}
+                  <span class="tag-label">${escapeHtml(primary.meterLabel || line.tag || 'mixed meter')}</span>
+                </span>
+                <span class="tag-bar"><span style="width:${combined}%"></span></span>
+              </button>
+            </div>
+          </article>
+        `;
+      }
+
+      function bindPoemLineButtons(root) {
+        root.querySelectorAll('[data-open-line]').forEach((button) => {
+          if (button.dataset.bound === 'true') return;
+          button.dataset.bound = 'true';
+          button.addEventListener('click', () => {
+            openLineDrawer(Number(button.dataset.openLine));
+          });
+        });
+      }
+
+      function updatePoemLine(lineIndex) {
+        const line = state.analysis?.lines?.find((entry) => entry.index === lineIndex);
+        if (!line || line.blank) return;
+
+        const row = poemView.querySelector(`[data-line-index="${lineIndex}"]`);
+        if (!row) {
+          renderPoem(state.analysis);
+          return;
+        }
+
+        row.outerHTML = buildLineRowMarkup(line, getDisplayedLineNumber(lineIndex));
+
+        const nextRow = poemView.querySelector(`[data-line-index="${lineIndex}"]`);
+        if (!nextRow) return;
+
+        hydrateAnnotatedLines(nextRow);
+        bindPoemLineButtons(nextRow);
+      }
+
+      async function consumeProgressStream(response, scanId) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          let boundary = buffer.indexOf('\n');
+          while (boundary >= 0) {
+            const chunk = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 1);
+            if (chunk) {
+              handleProgressEvent(JSON.parse(chunk), scanId);
+            }
+            boundary = buffer.indexOf('\n');
+          }
+        }
+
+        buffer += decoder.decode();
+        if (buffer.trim()) {
+          handleProgressEvent(JSON.parse(buffer.trim()), scanId);
+        }
+      }
+
+      function handleProgressEvent(event, scanId) {
+        if (scanId !== state.scan.id) return;
+
+        if (event.type === 'error') {
+          throw new Error(event.error || 'Scan failed.');
+        }
+
+        if (event.type === 'line') {
+          applyProgressLine(event.line);
+          return;
+        }
+
+        if (event.type === 'complete') {
+          applyCompleteAnalysis({
+            ...event.analysis,
+            complete: true,
+            summaryPending: event.analysis?.summary == null
+          }, scanId);
+          return;
+        }
+
+        if (event.type === 'summary') {
+          applySummary(event.summary, scanId);
+        }
+      }
+
+      function applyProgressLine(line) {
+        if (!state.analysis?.lines?.[line.index]) return;
+
+        state.analysis.lines[line.index] = {
+          ...line,
+          pending: false
+        };
+
+        updatePoemLine(line.index);
+        if (state.drawer.open && state.drawer.mode === 'line' && state.drawer.lineIndex === line.index) {
+          renderDrawer();
+        }
+      }
+
+      function applyCompleteAnalysis(analysis, scanId) {
+        if (scanId !== state.scan.id) return;
+
+        state.analysis = {
+          ...analysis,
+          summary: analysis.summary || state.analysis?.summary || '',
+          complete: true,
+          summaryPending: Boolean(analysis.summaryPending)
+        };
+
+        renderToolbar(state.analysis);
+        renderPoem(state.analysis);
+        if (state.drawer.open) {
+          renderDrawer();
+        }
+
+        setLoadingPhase(state.analysis.summaryPending ? 'finishing' : 'idle');
+      }
+
+      function applySummary(summary, scanId) {
+        if (scanId !== state.scan.id || !state.analysis) return;
+
+        state.analysis = {
+          ...state.analysis,
+          summary: summary || state.analysis.summary,
+          summaryPending: false
+        };
+
+        if (state.drawer.open) {
+          renderDrawer();
+        }
+
+        setLoadingPhase('idle');
+      }
+
+      function openOverviewDrawer() {
+        if (!state.analysis?.complete) return;
+
+        state.drawer.open = true;
+        state.drawer.mode = 'overview';
+        state.drawer.lineIndex = null;
+        renderDrawer();
+      }
+
+      function openLineDrawer(lineIndex) {
+        const line = state.analysis?.lines?.find((entry) => entry.index === lineIndex);
+        if (!state.analysis || !line || line.pending) return;
+
+        state.drawer.open = true;
+        state.drawer.mode = 'line';
+        state.drawer.lineIndex = lineIndex;
+        renderDrawer();
+      }
+
+      function closeDrawer(options = {}) {
+        state.drawer.open = false;
+        if (!options.keepState) {
+          state.drawer.mode = 'overview';
+          state.drawer.lineIndex = null;
+        }
+        renderDrawer();
+      }
+
+      function renderDrawer() {
+        const isOpen = state.drawer.open && !!state.analysis;
+        document.body.classList.toggle('drawer-open', isOpen);
+        drawer.setAttribute('aria-hidden', String(!isOpen));
+        drawerBackdrop.setAttribute('aria-hidden', String(!isOpen));
+
+        if (!isOpen) {
+          return;
+        }
+
+        if (state.drawer.mode === 'line') {
+          renderLineDrawer();
+        } else {
+          renderOverviewDrawer();
+        }
+      }
+
+      function renderOverviewDrawer() {
+        const analysis = state.analysis;
+        if (!analysis?.complete) return;
+        const heuristics = analysis.diagnostics?.heuristicWords || [];
+        const rhyme = analysis.rhyme || { overallScheme: '', stanzas: [] };
+        const uncertainLines = analysis.lines
+          .filter((line) => !line.blank)
+          .map((line) => ({
+            line,
+            combined: getCombinedConfidence(line.scans?.[0], line.confidence)
+          }))
+          .sort((a, b) => {
+            return a.combined - b.combined;
+          })
+          .slice(0, 5);
+
+        drawerKicker.textContent = 'Overview';
+        drawerTitle.textContent = analysis.overallMeter || 'Scansion overview';
+        drawerSubtitle.textContent = 'One confidence bar combines local fit with stanza support. Longer bar means a stronger reading.';
+
+        const summary = analysis.summaryPending
+          ? 'Generating summary...'
+          : analysis.summary || 'No summary was generated for this poem.';
+        const heuristicMarkup = heuristics.length
+          ? `<p>${heuristics.map((word) => escapeHtml(word)).join(', ')}</p>`
+          : '<p class="empty-panel">Every scanned word was found in the pronunciation layer.</p>';
+        const rhymeMarkup = rhyme.stanzas?.length
+          ? `
+              <div class="scheme-overall">${escapeHtml(rhyme.overallScheme || '-')}</div>
+              <div class="scheme-list">
+                ${rhyme.stanzas.map((stanza) => `
+                  <div class="scheme-row">
+                    <span>Stanza ${stanza.stanzaIndex + 1}</span>
+                    <strong>${escapeHtml(stanza.scheme)}</strong>
+                  </div>
+                `).join('')}
+              </div>
+            `
+          : '<p class="empty-panel">Rhyme letters will appear after the poem scan completes.</p>';
+
+        const uncertainMarkup = uncertainLines.length
+          ? uncertainLines.map(({ line, combined }) => `
+              <button class="drawer-link" type="button" data-open-uncertain="${line.index}">
+                <span class="drawer-link-copy">Line ${getDisplayedLineNumber(line.index)}. ${escapeHtml(line.text)}</span>
+                <span class="mini-link-bar"><span style="width:${combined}%"></span></span>
+              </button>
+            `).join('')
+          : '<p class="empty-panel">No uncertain lines were detected.</p>';
+
+        drawerBody.innerHTML = `
+          <section class="panel">
+            <h3>Summary</h3>
+            <p>${escapeHtml(summary)}</p>
+          </section>
+
+          <section class="panel">
+            <h3>Diagnostics</h3>
+            <div class="mini-grid">
+              <div class="mini-stat"><span>Stanzas</span><strong>${analysis.diagnostics?.stanzaCount || 0}</strong></div>
+              <div class="mini-stat"><span>Counted lines</span><strong>${analysis.diagnostics?.lineCount || 0}</strong></div>
+              <div class="mini-stat"><span>Confidence</span><strong>Relative only</strong></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>Rhyme scheme</h3>
+            ${rhymeMarkup}
+          </section>
+
+          <section class="panel">
+            <h3>Fallback pronunciations</h3>
+            ${heuristicMarkup}
+          </section>
+
+          <section class="panel">
+            <h3>Lines to inspect first</h3>
+            <div class="mini-grid">${uncertainMarkup}</div>
+          </section>
+        `;
+
+        drawerBody.querySelectorAll('[data-open-uncertain]').forEach((button) => {
+          button.addEventListener('click', () => {
+            openLineDrawer(Number(button.dataset.openUncertain));
+          });
+        });
+      }
+
+      function renderLineDrawer() {
+        const line = state.analysis?.lines.find((entry) => entry.index === state.drawer.lineIndex);
+        if (!line || line.blank) {
+          renderOverviewDrawer();
+          return;
+        }
+
+        if (line.pending) {
+          drawerKicker.textContent = `Line ${getDisplayedLineNumber(line.index)}`;
+          drawerTitle.textContent = line.text;
+          drawerSubtitle.textContent = 'This line is still scanning.';
+          drawerBody.innerHTML = `
+            <section class="panel">
+              <p class="empty-panel">Scansion details for this line will appear as soon as the scan is ready.</p>
+            </section>
+          `;
+          return;
+        }
+
+        const primary = line.scans?.[0] || {};
+        const lineNumberValue = getDisplayedLineNumber(line.index);
+
+        drawerKicker.textContent = `Line ${lineNumberValue}`;
+        drawerTitle.textContent = line.text;
+        drawerSubtitle.textContent = `${state.analysis?.complete ? 'Best' : 'Current'} reading: ${primary.meterLabel || line.tag || 'mixed meter'}${line.rhymeLetter ? `. Rhyme ${line.rhymeLetter}.` : '.'}`;
+
+        const cards = (line.scans || []).slice(0, 3).map((scan, scanIndex) => renderScanCard(line, scan, primary, scanIndex)).join('');
+
+        drawerBody.innerHTML = `
+          ${cards || '<section class="panel"><p class="empty-panel">No alternate scans are available for this line.</p></section>'}
+        `;
+        hydrateAnnotatedLines(drawerBody);
+      }
+
+      function renderScanCard(line, scan, primary, scanIndex) {
+        const notes = (scan.observations || []).length ? scan.observations.join(', ') : '';
+        const noteMarkup = notes ? `<p class="candidate-note">${escapeHtml(notes)}</p>` : '';
+        const combined = getCombinedConfidence(scan);
+        const diffIndexes = scan.isPrimary
+          ? []
+          : getGuideDifferenceIndexes(scan.displayGuide || '', primary?.displayGuide || '');
+
+        return `
+          <article class="candidate-card${scan.isPrimary ? ' primary' : ''}">
+            <div class="candidate-top">
+              <div class="candidate-title-wrap">
+                <div class="candidate-rank">${scan.isPrimary ? 'Top reading' : `Reading ${scanIndex + 1}`}</div>
+                <h3 class="candidate-title">${escapeHtml(scan.meterLabel)}</h3>
+              </div>
+              <div class="candidate-metrics">
+                <span class="candidate-bar"><span style="width:${combined}%"></span></span>
+              </div>
+            </div>
+
+            ${createAnnotatedLineMarkup(line.text, scan.displayGuide || '', 'drawer-annotated', diffIndexes)}
+            ${noteMarkup}
+          </article>
+        `;
+      }
+
+      function getDisplayedLineNumber(targetIndex) {
+        if (!state.analysis) return '';
+
+        let count = 0;
+        for (const line of state.analysis.lines) {
+          if (line.blank) continue;
+          count += 1;
+          if (line.index === targetIndex) return count;
+        }
+
+        return '';
+      }
+
+      function getCombinedConfidence(scan, contextOverride) {
+        const fit = formatPercent(scan?.score ?? 0);
+        const context = formatPercent(contextOverride ?? scan?.confidence ?? 0);
+        return Math.round((fit * context) / 100);
+      }
+
+      function createAnnotatedLineMarkup(text, guide, extraClass = '', diffIndexes = []) {
+        const className = extraClass ? `annotated-line ${extraClass}` : 'annotated-line';
+        return `
+          <div class="${className}" data-annotated-text="${escapeHtml(text)}" data-annotated-guide="${escapeHtml(guide || '')}" data-annotated-diff="${escapeHtml((diffIndexes || []).join(','))}">
+            <div class="annotation-layer"></div>
+            <div class="annotated-text">${escapeHtml(text)}</div>
+          </div>
+        `;
+      }
+
+      function hydrateAnnotatedLines(root) {
+        root.querySelectorAll('[data-annotated-text]').forEach((container) => {
+          const text = container.getAttribute('data-annotated-text') || '';
+          const guide = container.getAttribute('data-annotated-guide') || '';
+          const diffIndexes = new Set((container.getAttribute('data-annotated-diff') || '')
+            .split(',')
+            .filter(Boolean)
+            .map((value) => Number(value)));
+          const textLayer = container.querySelector('.annotated-text');
+          const annotationLayer = container.querySelector('.annotation-layer');
+
+          if (!textLayer || !annotationLayer) return;
+
+          textLayer.textContent = text;
+          annotationLayer.textContent = '';
+
+          const textNode = textLayer.firstChild;
+          if (!textNode) return;
+
+          const containerRect = container.getBoundingClientRect();
+
+          for (let index = 0; index < guide.length; index += 1) {
+            const markerValue = guide[index];
+            if (!markerValue || markerValue === ' ') continue;
+
+            const range = document.createRange();
+            range.setStart(textNode, Math.min(index, text.length));
+            range.setEnd(textNode, Math.min(index + 1, text.length));
+
+            const rect = range.getBoundingClientRect();
+            if (!rect || (!rect.width && !rect.height)) continue;
+
+            const marker = document.createElement('span');
+            const displayMarker = markerValue === 'u' ? '\u02D8' : markerValue;
+            const markerClass = markerValue === 'u' ? 'unstressed' : markerValue === '|' ? 'break' : 'stressed';
+            marker.className = `annotated-mark ${markerClass}${diffIndexes.has(index) ? ' diff' : ''}`;
+            marker.textContent = displayMarker;
+            marker.style.left = `${rect.left - containerRect.left + rect.width / 2}px`;
+            marker.style.top = markerClass === 'break' ? '1px' : '0px';
+            annotationLayer.appendChild(marker);
+          }
+        });
+      }
+
+      function getGuideDifferenceIndexes(guide, primaryGuide) {
+        const output = [];
+        const limit = Math.max(guide.length, primaryGuide.length);
+
+        for (let index = 0; index < limit; index += 1) {
+          const marker = guide[index] || ' ';
+          const baseline = primaryGuide[index] || ' ';
+          if (marker !== ' ' && marker !== baseline) {
+            output.push(index);
+          }
+        }
+
+        return output;
+      }
+
+      async function readJsonResponse(response) {
+        const text = await response.text();
+
+        if (!text) {
+          return {};
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch {
+          const message = text.trim().split('\n')[0] || `Scan failed with status ${response.status}.`;
+          throw new Error(message);
+        }
+      }
+
+      function formatPercent(value) {
+        return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+    </script>
+  </body>
+</html>
