@@ -1,0 +1,923 @@
+{
+  "generatedAt": "2026-03-07T18:23:01.453Z",
+  "appVersion": "1.3.0",
+  "rounds": 3,
+  "summary": {
+    "corpusSize": 5,
+    "poemPassRate": 1,
+    "lineAccuracy": 1,
+    "stablePoems": 5,
+    "unstablePoems": []
+  },
+  "roundSummaries": [
+    {
+      "round": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "round": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "round": 3,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    }
+  ],
+  "byPoet": [
+    {
+      "key": "William Shakespeare",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "Emily Dickinson",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "John Newton",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "Alexander Pope",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    }
+  ],
+  "byForm": [
+    {
+      "key": "sonnet",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "ballad",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "hymn",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "couplets",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    }
+  ],
+  "byMeterFamily": [
+    {
+      "key": "iambic",
+      "poems": 3,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "common_meter",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    }
+  ],
+  "byAmbiguityType": [
+    {
+      "key": "historical_profile",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "archaic_diction",
+      "poems": 3,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "sonnet_form",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "common_meter",
+      "poems": 2,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "slant_rhyme",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "context_sensitive_stanza",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "profile_sensitive",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "hymn_tuning",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    },
+    {
+      "key": "heroic_couplets",
+      "poems": 1,
+      "poemPassRate": 1,
+      "lineAccuracy": 1
+    }
+  ],
+  "confidenceCalibration": [
+    {
+      "range": "80-89",
+      "count": 10,
+      "accuracy": 1
+    },
+    {
+      "range": "90-99",
+      "count": 50,
+      "accuracy": 1
+    }
+  ],
+  "poems": [
+    {
+      "id": "sonnet18",
+      "title": "Sonnet 18",
+      "author": "William Shakespeare",
+      "profile": "early_modern",
+      "meterFamily": "iambic",
+      "formFamily": "sonnet",
+      "ambiguityTypes": [
+        "historical_profile",
+        "archaic_diction",
+        "sonnet_form"
+      ],
+      "sourceTruth": "Canonical Shakespearean sonnet scansion and rhyme scheme.",
+      "analysis": {
+        "overallMeter": "iambic pentameter",
+        "form": "shakespearean_sonnet",
+        "rhymeScheme": "ABABCDCDEFEFGG",
+        "stanzaSchemePatterns": [
+          "ABABCDCDEFEFGG"
+        ]
+      },
+      "checks": {
+        "overallMeter": {
+          "expected": "iambic pentameter",
+          "actual": "iambic pentameter",
+          "pass": true
+        },
+        "form": {
+          "expected": "shakespearean_sonnet",
+          "actual": "shakespearean_sonnet",
+          "pass": true
+        },
+        "rhyme": {
+          "expected": "ABABCDCDEFEFGG",
+          "actual": "ABABCDCDEFEFGG",
+          "pass": true
+        },
+        "lineMeters": {
+          "expected": 14,
+          "actual": 14,
+          "pass": true
+        }
+      },
+      "lineAccuracy": {
+        "total": 14,
+        "correct": 14
+      },
+      "lineChecks": [
+        {
+          "line": 1,
+          "text": "Shall I compare thee to a summer's day?",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 2,
+          "text": "Thou art more lovely and more temperate:",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 3,
+          "text": "Rough winds do shake the darling buds of May,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 4,
+          "text": "And summer's lease hath all too short a date;",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 5,
+          "text": "Sometime too hot the eye of heaven shines,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 86
+        },
+        {
+          "line": 6,
+          "text": "And often is his gold complexion dimm'd;",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 7,
+          "text": "And every fair from fair sometime declines,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 86
+        },
+        {
+          "line": 8,
+          "text": "By chance or nature's changing course untrimm'd;",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 95
+        },
+        {
+          "line": 9,
+          "text": "But thy eternal summer shall not fade,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 10,
+          "text": "Nor lose possession of that fair thou ow'st,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 11,
+          "text": "Nor shall death brag thou wander'st in his shade,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 12,
+          "text": "When in eternal lines to Time thou grow'st:",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 13,
+          "text": "So long as men can breathe or eyes can see,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 14,
+          "text": "So long lives this, and this gives life to thee.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 86
+        }
+      ],
+      "pass": true,
+      "stable": true
+    },
+    {
+      "id": "sonnet73",
+      "title": "Sonnet 73",
+      "author": "William Shakespeare",
+      "profile": "early_modern",
+      "meterFamily": "iambic",
+      "formFamily": "sonnet",
+      "ambiguityTypes": [
+        "historical_profile",
+        "archaic_diction",
+        "sonnet_form"
+      ],
+      "sourceTruth": "Canonical Shakespearean sonnet scansion and rhyme scheme.",
+      "analysis": {
+        "overallMeter": "iambic pentameter",
+        "form": "shakespearean_sonnet",
+        "rhymeScheme": "ABABCDCDEFEFGG",
+        "stanzaSchemePatterns": [
+          "ABABCDCDEFEFGG"
+        ]
+      },
+      "checks": {
+        "overallMeter": {
+          "expected": "iambic pentameter",
+          "actual": "iambic pentameter",
+          "pass": true
+        },
+        "form": {
+          "expected": "shakespearean_sonnet",
+          "actual": "shakespearean_sonnet",
+          "pass": true
+        },
+        "rhyme": {
+          "expected": "ABABCDCDEFEFGG",
+          "actual": "ABABCDCDEFEFGG",
+          "pass": true
+        },
+        "lineMeters": {
+          "expected": 14,
+          "actual": 14,
+          "pass": true
+        }
+      },
+      "lineAccuracy": {
+        "total": 14,
+        "correct": 14
+      },
+      "lineChecks": [
+        {
+          "line": 1,
+          "text": "That time of year thou mayst in me behold",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 2,
+          "text": "When yellow leaves, or none, or few, do hang",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 3,
+          "text": "Upon those boughs which shake against the cold,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 4,
+          "text": "Bare ruin'd choirs, where late the sweet birds sang.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 5,
+          "text": "In me thou see'st the twilight of such day",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 6,
+          "text": "As after sunset fadeth in the west,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 7,
+          "text": "Which by and by black night doth take away,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 8,
+          "text": "Death's second self, that seals up all in rest.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 9,
+          "text": "In me thou see'st the glowing of such fire",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 10,
+          "text": "That on the ashes of his youth doth lie,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 11,
+          "text": "As the death-bed whereon it must expire,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 95
+        },
+        {
+          "line": 12,
+          "text": "Consum'd with that which it was nourish'd by.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 13,
+          "text": "This thou perceiv'st, which makes thy love more strong,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        },
+        {
+          "line": 14,
+          "text": "To love that well which thou must leave ere long.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 96
+        }
+      ],
+      "pass": true,
+      "stable": true
+    },
+    {
+      "id": "dickinson-death",
+      "title": "Because I could not stop for Death",
+      "author": "Emily Dickinson",
+      "profile": "modern",
+      "meterFamily": "common_meter",
+      "formFamily": "ballad",
+      "ambiguityTypes": [
+        "common_meter",
+        "slant_rhyme",
+        "context_sensitive_stanza"
+      ],
+      "sourceTruth": "Common-meter analysis with the inverted 6/8/8/6 fourth stanza.",
+      "analysis": {
+        "overallMeter": "common meter",
+        "form": "common_meter_ballad",
+        "rhymeScheme": "ABCB / DBEB / FGHI / JKLM / NOMO / PBQB",
+        "stanzaSchemePatterns": [
+          "ABCB",
+          "ABCB",
+          "ABCD",
+          "ABCD",
+          "ABCB",
+          "ABCB"
+        ]
+      },
+      "checks": {
+        "overallMeter": {
+          "expected": "common meter",
+          "actual": "common meter",
+          "pass": true
+        },
+        "form": {
+          "expected": "common_meter_ballad",
+          "actual": "common_meter_ballad",
+          "pass": true
+        },
+        "rhyme": {
+          "expected": [
+            "ABCB",
+            "ABCB",
+            "ABCD",
+            "ABCD",
+            "ABCB",
+            "ABCB"
+          ],
+          "actual": [
+            "ABCB",
+            "ABCB",
+            "ABCD",
+            "ABCD",
+            "ABCB",
+            "ABCB"
+          ],
+          "pass": true
+        },
+        "lineMeters": {
+          "expected": 24,
+          "actual": 24,
+          "pass": true
+        }
+      },
+      "lineAccuracy": {
+        "total": 24,
+        "correct": 24
+      },
+      "lineChecks": [
+        {
+          "line": 1,
+          "text": "Because I could not stop for Death -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 2,
+          "text": "He kindly stopped for me -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 3,
+          "text": "The Carriage held but just Ourselves -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 4,
+          "text": "And Immortality.",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 5,
+          "text": "We slowly drove - He knew no haste",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 6,
+          "text": "And I had put away",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 7,
+          "text": "My labor and my leisure too,",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 8,
+          "text": "For His Civility -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 9,
+          "text": "We passed the School, where Children strove",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 10,
+          "text": "At Recess - in the Ring -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 11,
+          "text": "We passed the Fields of Gazing Grain -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 12,
+          "text": "We passed the Setting Sun -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 13,
+          "text": "Or rather - He passed Us -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 14,
+          "text": "The Dews drew quivering and Chill -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 89
+        },
+        {
+          "line": 15,
+          "text": "For only Gossamer, my Gown -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 89
+        },
+        {
+          "line": 16,
+          "text": "My Tippet - only Tulle -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 87
+        },
+        {
+          "line": 17,
+          "text": "We paused before a House that seemed",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 18,
+          "text": "A Swelling of the Ground -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 19,
+          "text": "The Roof was scarcely visible -",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 89
+        },
+        {
+          "line": 20,
+          "text": "The Cornice - in the Ground -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 95
+        },
+        {
+          "line": 21,
+          "text": "Since then - 'tis Centuries - and yet",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 89
+        },
+        {
+          "line": 22,
+          "text": "Feels shorter than the Day",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 23,
+          "text": "I first surmised the Horses' Heads",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 24,
+          "text": "Were toward Eternity -",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        }
+      ],
+      "pass": true,
+      "stable": true
+    },
+    {
+      "id": "amazing-grace",
+      "title": "Amazing Grace",
+      "author": "John Newton",
+      "profile": "hymn",
+      "meterFamily": "common_meter",
+      "formFamily": "hymn",
+      "ambiguityTypes": [
+        "common_meter",
+        "profile_sensitive",
+        "hymn_tuning"
+      ],
+      "sourceTruth": "Standard hymn common meter with ABAB rhyme.",
+      "analysis": {
+        "overallMeter": "common meter",
+        "form": "hymn_common_meter",
+        "rhymeScheme": "ABAB",
+        "stanzaSchemePatterns": [
+          "ABAB"
+        ]
+      },
+      "checks": {
+        "overallMeter": {
+          "expected": "common meter",
+          "actual": "common meter",
+          "pass": true
+        },
+        "form": {
+          "expected": "hymn_common_meter",
+          "actual": "hymn_common_meter",
+          "pass": true
+        },
+        "rhyme": {
+          "expected": "ABAB",
+          "actual": "ABAB",
+          "pass": true
+        },
+        "lineMeters": {
+          "expected": 4,
+          "actual": 4,
+          "pass": true
+        }
+      },
+      "lineAccuracy": {
+        "total": 4,
+        "correct": 4
+      },
+      "lineChecks": [
+        {
+          "line": 1,
+          "text": "Amazing grace! How sweet the sound",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 2,
+          "text": "That saved a wretch like me!",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 3,
+          "text": "I once was lost, but now am found,",
+          "expectedMeter": "iambic_tetrameter",
+          "actualMeter": "iambic_tetrameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 4,
+          "text": "Was blind, but now I see.",
+          "expectedMeter": "iambic_trimeter",
+          "actualMeter": "iambic_trimeter",
+          "pass": true,
+          "confidence": 100
+        }
+      ],
+      "pass": true,
+      "stable": true
+    },
+    {
+      "id": "pope-criticism",
+      "title": "Essay on Criticism (excerpt)",
+      "author": "Alexander Pope",
+      "profile": "early_modern",
+      "meterFamily": "iambic",
+      "formFamily": "couplets",
+      "ambiguityTypes": [
+        "heroic_couplets",
+        "archaic_diction"
+      ],
+      "sourceTruth": "A standard heroic-couplet pentameter excerpt.",
+      "analysis": {
+        "overallMeter": "iambic pentameter",
+        "form": "heroic_couplets",
+        "rhymeScheme": "AABB",
+        "stanzaSchemePatterns": [
+          "AABB"
+        ]
+      },
+      "checks": {
+        "overallMeter": {
+          "expected": "iambic pentameter",
+          "actual": "iambic pentameter",
+          "pass": true
+        },
+        "form": {
+          "expected": "heroic_couplets",
+          "actual": "heroic_couplets",
+          "pass": true
+        },
+        "rhyme": {
+          "expected": "AABB",
+          "actual": "AABB",
+          "pass": true
+        },
+        "lineMeters": {
+          "expected": 4,
+          "actual": 4,
+          "pass": true
+        }
+      },
+      "lineAccuracy": {
+        "total": 4,
+        "correct": 4
+      },
+      "lineChecks": [
+        {
+          "line": 1,
+          "text": "True wit is nature to advantage dress'd,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 2,
+          "text": "What oft was thought, but ne'er so well express'd;",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 100
+        },
+        {
+          "line": 3,
+          "text": "Something, whose truth convinc'd at sight we find,",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 84
+        },
+        {
+          "line": 4,
+          "text": "That gives us back the image of our mind.",
+          "expectedMeter": "iambic_pentameter",
+          "actualMeter": "iambic_pentameter",
+          "pass": true,
+          "confidence": 83
+        }
+      ],
+      "pass": true,
+      "stable": true
+    }
+  ]
+}

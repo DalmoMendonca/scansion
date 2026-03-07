@@ -97,7 +97,7 @@
       }
 
       .toolbar {
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
@@ -105,10 +105,7 @@
         border: 1px solid var(--line);
         border-radius: 18px;
         background: #ffffff;
-      }
-
-      body[data-mode="scan"] .toolbar {
-        display: flex;
+        flex-wrap: wrap;
       }
 
       .toolbar-meta,
@@ -119,8 +116,18 @@
         flex-wrap: wrap;
       }
 
+      .toolbar-meta {
+        flex: 1 1 420px;
+      }
+
+      .toolbar-actions {
+        flex: 1 1 360px;
+        justify-content: flex-end;
+      }
+
       .meta-chip,
-      .chip-button {
+      .chip-button,
+      .field-chip {
         border: 1px solid var(--line);
         border-radius: 999px;
         padding: 8px 12px;
@@ -135,6 +142,35 @@
         align-items: center;
         gap: 8px;
         color: var(--muted);
+      }
+
+      .field-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+      }
+
+      .field-chip label {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .chip-select {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--fg);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        min-width: 170px;
+        padding-right: 8px;
+      }
+
+      .chip-select:focus {
+        outline: none;
       }
 
       .tag-bar,
@@ -189,12 +225,15 @@
       }
 
       .text-button {
+        display: inline-flex;
+        align-items: center;
         border: 1px solid var(--line);
         border-radius: 999px;
         padding: 8px 12px;
         font-size: 12px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+        text-decoration: none;
       }
 
       .editor-shell,
@@ -516,11 +555,57 @@
         text-align: center;
       }
 
+      .rhyme-button {
+        width: 1.75em;
+        height: 1.75em;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .rhyme-button:hover {
+        border-color: var(--line);
+        background: rgba(24, 22, 18, 0.03);
+      }
+
+      .rhyme-button[data-quality="perfect"] .rhyme-letter {
+        color: #174872;
+      }
+
+      .rhyme-button[data-quality="slant"] .rhyme-letter {
+        color: #8a5b12;
+      }
+
+      .rhyme-button[data-quality="consonance"] .rhyme-letter,
+      .rhyme-button[data-quality="eye"] .rhyme-letter {
+        color: #7b5e36;
+      }
+
+      .rhyme-button[data-quality="weak"] .rhyme-letter,
+      .rhyme-button[data-quality="unique"] .rhyme-letter {
+        color: var(--muted);
+      }
+
       .tag-label {
         font-size: 13px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         text-align: right;
+      }
+
+      .tag-note {
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .line-row.overridden .line-number,
+      .line-row.overridden .tag-note {
+        color: var(--accent);
       }
 
       .tag-bar {
@@ -558,6 +643,12 @@
         min-height: 24px;
         color: var(--danger);
         font-size: 14px;
+      }
+
+      .notice {
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 13px;
       }
 
       @keyframes spin {
@@ -692,6 +783,56 @@
         gap: 10px;
       }
 
+      .quality-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .quality-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .quality-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .quality-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--line-strong);
+      }
+
+      .quality-dot[data-quality="perfect"] {
+        background: #174872;
+      }
+
+      .quality-dot[data-quality="slant"] {
+        background: #8a5b12;
+      }
+
+      .quality-dot[data-quality="consonance"] {
+        background: #7b5e36;
+      }
+
+      .quality-dot[data-quality="eye"] {
+        background: #8e744d;
+      }
+
+      .quality-dot[data-quality="weak"],
+      .quality-dot[data-quality="unique"] {
+        background: #b3ada3;
+      }
+
       .mini-stat {
         display: flex;
         justify-content: space-between;
@@ -705,6 +846,163 @@
       .mini-stat strong {
         color: var(--fg);
         font-weight: 600;
+      }
+
+      .signal-list,
+      .token-grid,
+      .project-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .signal-list {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+
+      .signal-chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 12px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .token-grid {
+        grid-template-columns: repeat(auto-fit, minmax(84px, max-content));
+        align-items: start;
+      }
+
+      .token-button,
+      .option-button,
+      .project-action,
+      .secondary-button {
+        appearance: none;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #ffffff;
+        color: var(--fg);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .token-button:hover,
+      .option-button:hover,
+      .project-action:hover,
+      .secondary-button:hover {
+        border-color: var(--line-strong);
+        background: rgba(24, 22, 18, 0.03);
+      }
+
+      .token-button.active,
+      .option-button.active {
+        border-color: rgba(36, 72, 90, 0.28);
+        background: rgba(36, 72, 90, 0.06);
+      }
+
+      .token-word {
+        display: block;
+        font-family: var(--poem-font);
+        font-size: 20px;
+        line-height: 1.2;
+        margin-bottom: 6px;
+      }
+
+      .token-meta,
+      .option-meta,
+      .project-meta {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .option-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .option-pattern {
+        display: block;
+        margin-bottom: 6px;
+        font-family: var(--mono-font);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+
+      .override-detail,
+      .project-card {
+        display: grid;
+        gap: 12px;
+      }
+
+      .override-head,
+      .project-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .override-title,
+      .project-title {
+        margin: 0;
+        font-family: var(--poem-font);
+        font-size: 24px;
+        line-height: 1.2;
+      }
+
+      .override-data {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .override-data strong {
+        color: var(--fg);
+      }
+
+      .inline-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .inline-form label {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .inline-form input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: #ffffff;
+        color: var(--fg);
+      }
+
+      .inline-actions,
+      .project-actions,
+      .drawer-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .project-card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px 18px;
+        background: #ffffff;
+      }
+
+      .project-title {
+        font-size: 26px;
       }
       .candidate-card {
         padding: 16px 18px;
@@ -844,6 +1142,7 @@
         .toolbar-meta,
         .toolbar-actions {
           width: 100%;
+          justify-content: flex-start;
         }
 
         .editor {
@@ -861,6 +1160,11 @@
 
         .drawer-title {
           font-size: 24px;
+        }
+
+        .override-title,
+        .project-title {
+          font-size: 22px;
         }
       }
     </style>
@@ -885,17 +1189,33 @@
         <section id="poemView" class="poem-view" aria-live="polite"></section>
         <header class="toolbar">
           <div class="toolbar-meta">
+            <div class="field-chip">
+              <label for="profileSelect">
+                <span>Profile</span>
+                <select id="profileSelect" class="chip-select" aria-label="Pronunciation profile"></select>
+              </label>
+            </div>
             <button id="overviewButton" class="chip-button" type="button">Overview</button>
             <div class="meta-chip">
               <span>Overall</span>
               <strong id="overallMeter">-</strong>
             </div>
+            <div class="meta-chip">
+              <span>Form</span>
+              <strong id="overallForm">-</strong>
+            </div>
           </div>
 
           <div class="toolbar-actions">
+            <button id="projectsButton" class="text-button" type="button">Projects</button>
+            <button id="saveButton" class="text-button" type="button">Save</button>
+            <button id="shareButton" class="text-button" type="button">Share</button>
+            <button id="exportPdfButton" class="text-button" type="button">Export PDF</button>
+            <button id="clearOverridesButton" class="text-button" type="button">Clear overrides</button>
             <button id="editButton" class="text-button" type="button">Edit poem</button>
           </div>
         </header>
+        <div id="notice" class="notice" aria-live="polite"></div>
         <div id="error" class="error" role="alert"></div>
       </section>
     </main>
@@ -916,7 +1236,7 @@
       <div id="drawerBody" class="drawer-body"></div>
     </aside>
 
-    <script>
+    <!--
       const input = document.getElementById('poemInput');
       const editorLineNumbers = document.getElementById('editorLineNumbers');
       const scanButton = document.getElementById('scanButton');
@@ -1639,6 +1959,7 @@
           .replaceAll('"', '&quot;')
           .replaceAll("'", '&#39;');
       }
-    </script>
+    -->
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

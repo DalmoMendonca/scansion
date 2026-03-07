@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scansion API</title>
+    <style>
+      :root {
+        --fg: #181612;
+        --muted: #6f695e;
+        --line: rgba(24, 22, 18, 0.12);
+        --font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: var(--fg);
+        font-family: var(--font);
+      }
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 28px 24px 48px;
+        display: grid;
+        gap: 18px;
+      }
+      h1, h2, h3, p, pre { margin: 0; }
+      p {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px 20px;
+        display: grid;
+        gap: 12px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .label {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      code, pre {
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      pre {
+        overflow: auto;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(24, 22, 18, 0.04);
+        line-height: 1.55;
+      }
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <h1>Scansion API</h1>
+        <p>
+          The public API is versioned, supports single-poem, batch, and streamed line-by-line scans, and powers the embeddable widget below. Responses include the <code>x-scansion-api-version</code> header and an <code>apiVersion</code> field in the JSON body.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="label">Endpoint</div>
+          <code>POST /api/scan</code>
+        </article>
+        <article class="panel">
+          <div class="label">Version</div>
+          <code>v1</code>
+        </article>
+        <article class="panel">
+          <div class="label">Payload limits</div>
+          <p>Single poem: 24,000 characters. Batch: 10 poems / 120,000 characters.</p>
+        </article>
+        <article class="panel">
+          <div class="label">Public usage guidance</div>
+          <p>Soft limit: keep automated traffic below roughly 60 requests per minute per client.</p>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Single scan</h2>
+        <pre>{
+  "poem": "Shall I compare thee to a summer's day?",
+  "profile": "early_modern",
+  "includeSummary": false
+}</pre>
+        <p>The response returns poem-level metadata, line scans, rhyme groups, form detection, diagnostics, and the active pronunciation profile.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Streamed scan</h2>
+        <pre>{
+  "poem": "Because I could not stop for Death -\nHe kindly stopped for me -",
+  "stream": true,
+  "includeSummary": false
+}</pre>
+        <p>Streaming responses use <code>application/x-ndjson</code> and emit <code>line</code>, <code>complete</code>, and optional <code>summary</code> events in order.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Batch scan</h2>
+        <pre>{
+  "profile": "modern",
+  "poems": [
+    { "id": "p1", "title": "Poem one", "poem": "..." },
+    { "id": "p2", "title": "Poem two", "poem": "...", "profile": "hymn" }
+  ]
+}</pre>
+        <p>Batch mode returns per-poem summaries using the same core engine as the single scan path.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Overrides</h2>
+        <pre>{
+  "poem": "At Recess - in the Ring -",
+  "overrides": {
+    "tokens": {
+      "0:1": {
+        "stressPattern": "su",
+        "pronunciation": "R IH0 S EH1 S",
+        "label": "noun reading"
+      }
+    }
+  }
+}</pre>
+        <p>Overrides can target a specific token by <code>lineIndex:tokenIndex</code> or a normalized word. The frontend uses token overrides so readers can correct one line without rewriting the whole poem.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Embeddable widget</h2>
+        <p>Embed the widget with a custom poem, profile, or endpoint. The widget fetches scans from the same versioned API and can be initialized manually through <code>window.ScansionWidget.renderScansionWidget()</code>.</p>
+        <pre>&lt;script type="module" src="https://poetryscansion.netlify.app/widget.js"&gt;&lt;/script&gt;
+&lt;div
+  data-scansion-widget
+  data-profile="modern"
+  data-max-lines="4"
+  data-poem="Amazing grace! How sweet the sound&#10;That saved a wretch like me!&#10;I once was lost, but now am found,&#10;Was blind, but now I see."
+&gt;&lt;/div&gt;</pre>
+        <div data-scansion-widget data-profile="modern" data-max-lines="4" data-poem="Amazing grace! How sweet the sound&#10;That saved a wretch like me!&#10;I once was lost, but now am found,&#10;Was blind, but now I see."></div>
+      </section>
+
+      <section class="panel">
+        <h2>Docs and benchmarks</h2>
+        <p>
+          The live benchmark dashboard is available at <a href="/benchmarks.html">/benchmarks.html</a>. It is generated from the same benchmark runner used in CI.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="/widget.js"></script>
+  </body>
+</html>

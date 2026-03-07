@@ -1,6 +1,69 @@
 import { dictionary as cmuDictionary } from 'cmu-pronouncing-dictionary';
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+export const API_VERSION = 'v1';
+const MAX_POEM_CHARS = 24000;
+const MAX_BATCH_POEMS = 10;
+const MAX_BATCH_CHARS = 120000;
+
+const SCAN_PROFILES = {
+  modern: {
+    key: 'modern',
+    label: 'Modern American',
+    description: 'Default contemporary pronunciation assumptions.',
+    extraReductions: {},
+    contextualCostShift: 0,
+    promoteCostShift: 0,
+    poeticCostShift: 0,
+    commonMeterBonus: 0,
+    pentameterBonus: 0,
+    tetrameterBonus: 0,
+    syllabicEd: false
+  },
+  early_modern: {
+    key: 'early_modern',
+    label: 'Early Modern leaning',
+    description: 'More permissive archaic contractions, syllabic endings, and Renaissance-era variants.',
+    extraReductions: {
+      consumed: [['u', 's']],
+      nourishd: [['u', 's']],
+      nourished: [['u', 's']],
+      ruined: [['u', 's']],
+      ruined: [['u', 's']],
+      temperate: [['u', 's', 'u']],
+      wandering: [['u', 's', 'u']]
+    },
+    contextualCostShift: -0.22,
+    promoteCostShift: -0.24,
+    poeticCostShift: -0.18,
+    commonMeterBonus: 0,
+    pentameterBonus: 0.4,
+    tetrameterBonus: 0,
+    syllabicEd: true
+  },
+  hymn: {
+    key: 'hymn',
+    label: 'Hymn / Common Meter',
+    description: 'Biases hymnbook-style common meter and common poetic reductions used in sung verse.',
+    extraReductions: {
+      spirit: [['s', 'u']],
+      over: [['s', 'u']],
+      heaven: [['s']],
+      every: [['s', 'u']],
+      flower: [['s']],
+      power: [['s']],
+      toward: [['s']],
+      towards: [['s']]
+    },
+    contextualCostShift: -0.28,
+    promoteCostShift: -0.35,
+    poeticCostShift: -0.28,
+    commonMeterBonus: 10,
+    pentameterBonus: 0,
+    tetrameterBonus: 0.32,
+    syllabicEd: false
+  }
+};
 
 const METER_LIBRARY = [
   { key: 'iambic_monometer', label: 'iambic monometer', pattern: ['u', 's'], feet: 1, family: 'iambic' },
@@ -72,40 +135,156 @@ const VOWELS = /[aeiouy]+/g;
 const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ'’-]+/g;
 
 export default async (request) => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders({
+        'access-control-allow-methods': 'POST, OPTIONS',
+        'access-control-allow-headers': 'content-type'
+      })
+    });
+  }
+
   if (request.method !== 'POST') {
-    return json({ error: 'Method not allowed.' }, 405);
+    return json({ error: 'Method not allowed.', apiVersion: API_VERSION }, 405);
   }
 
   try {
     const body = await request.json();
-    const poem = String(body?.poem || '');
     const wantSummary = body?.includeSummary !== false;
+
+    if (Array.isArray(body?.poems)) {
+      const batch = await scanBatch({
+        poems: body.poems,
+        includeSummary: wantSummary,
+        profile: body?.profile,
+        overrides: body?.overrides
+      });
+      return json(batch);
+    }
+
+    const poem = String(body?.poem || '');
     const stream = body?.stream === true;
+    const profileKey = body?.profile || 'modern';
+    const overrides = normalizeOverrides(body?.overrides);
+
+    validatePoemLength(poem);
 
     if (!poem.trim()) {
-      return json({ error: 'Please paste a poem first.' }, 400);
+      return json({ error: 'Please paste a poem first.', apiVersion: API_VERSION }, 400);
     }
 
     if (stream) {
-      return streamAnalysis(poem, wantSummary);
+      return streamAnalysis({ poem, wantSummary, profileKey, overrides });
     }
 
-    const analysis = analyzePoem(poem);
+    const analysis = scanPoem({
+      poem,
+      profileKey,
+      overrides
+    });
     const summary = wantSummary ? await generateSummary(analysis).catch(() => fallbackSummary(analysis)) : null;
 
-    return json({ ...analysis, summary });
+    return json({
+      apiVersion: API_VERSION,
+      kind: 'single',
+      ...analysis,
+      summary
+    });
   } catch (error) {
-    return json({ error: error?.message || 'Unexpected error.' }, 500);
+    const status = error?.statusCode || error?.status || 500;
+    return json({ error: error?.message || 'Unexpected error.', apiVersion: API_VERSION }, status);
   }
 };
 
-function analyzePoem(poem) {
+export function scanPoem({
+  poem,
+  profileKey = 'modern',
+  overrides = {},
+  id = '',
+  title = ''
+} = {}) {
+  validatePoemLength(poem);
+  const profile = resolveProfile(profileKey);
+  const normalizedOverrides = normalizeOverrides(overrides);
+  const analysis = analyzePoem(poem, { profile, overrides: normalizedOverrides });
+  return {
+    id,
+    title,
+    profile: {
+      key: profile.key,
+      label: profile.label,
+      description: profile.description
+    },
+    ...analysis
+  };
+}
+
+export async function scanBatch({
+  poems,
+  includeSummary = false,
+  profile: defaultProfile = 'modern',
+  overrides: defaultOverrides = {}
+} = {}) {
+  if (!Array.isArray(poems) || poems.length === 0) {
+    const error = new Error('Batch requests must include at least one poem.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (poems.length > MAX_BATCH_POEMS) {
+    const error = new Error(`Batch requests are limited to ${MAX_BATCH_POEMS} poems.`);
+    error.statusCode = 413;
+    throw error;
+  }
+
+  const totalChars = poems.reduce((sum, entry) => sum + String(entry?.poem || '').length, 0);
+  if (totalChars > MAX_BATCH_CHARS) {
+    const error = new Error(`Batch requests are limited to ${MAX_BATCH_CHARS} characters.`);
+    error.statusCode = 413;
+    throw error;
+  }
+
+  const analyses = [];
+  for (const [index, entry] of poems.entries()) {
+    const poem = String(entry?.poem || '');
+    validatePoemLength(poem);
+
+    if (!poem.trim()) {
+      const error = new Error(`Batch poem ${index + 1} is empty.`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const analysis = scanPoem({
+      poem,
+      profileKey: entry?.profile || defaultProfile,
+      overrides: entry?.overrides || defaultOverrides,
+      id: String(entry?.id || `poem-${index + 1}`),
+      title: String(entry?.title || '')
+    });
+
+    analyses.push({
+      ...analysis,
+      summary: includeSummary ? await generateSummary(analysis).catch(() => fallbackSummary(analysis)) : null
+    });
+  }
+
+  return {
+    apiVersion: API_VERSION,
+    kind: 'batch',
+    count: analyses.length,
+    analyses
+  };
+}
+
+function analyzePoem(poem, context) {
   const structure = buildPoemStructure(poem);
   const analyzedLines = structure.lineObjects.map((line) => {
-    return line.blank ? createBlankLineAnalysis(line) : analyzeLine(line.text, line.index);
+    return line.blank ? createBlankLineAnalysis(line) : analyzeLine(line.text, line.index, context);
   });
 
-  return finalizeAnalysis(structure, analyzedLines);
+  return finalizeAnalysis(structure, analyzedLines, context);
 }
 
 function buildPoemStructure(poem) {
@@ -151,12 +330,23 @@ function createBlankLineAnalysis(line) {
   };
 }
 
-function finalizeAnalysis(structure, analyzedLines) {
+function hydrateLineMetadata(line) {
+  const topVariants = line.scans?.[0]?.variants || [];
+  return {
+    ...line,
+    tokens: (line.tokens || []).map((token, index) => ({
+      ...token,
+      activeVariant: topVariants[index] || null
+    }))
+  };
+}
+
+function finalizeAnalysis(structure, analyzedLines, context) {
   const { normalized, stanzas } = structure;
   const finalLines = [...analyzedLines];
   const stanzaResults = stanzas.map((stanzaLines, stanzaIndex) => {
     const members = stanzaLines.map((line) => analyzedLines[line.index]);
-    const selection = selectStanzaReadings(members);
+    const selection = selectStanzaReadings(members, context);
 
     stanzaLines.forEach((line, memberIndex) => {
       finalLines[line.index] = selection.lines[memberIndex];
@@ -178,11 +368,12 @@ function finalizeAnalysis(structure, analyzedLines) {
     if (top) meterTally.set(top.meterKey, (meterTally.get(top.meterKey) || 0) + top.score);
   });
 
-  const overall = inferOverallMeter(finalLines, stanzaResults, meterTally);
+  const overall = inferOverallMeter(finalLines, stanzaResults, meterTally, context);
   const overallLabel = overall === 'common_meter'
     ? 'common meter'
     : (METER_LIBRARY.find((m) => m.key === overall) || METER_LIBRARY.at(-1)).label;
-  const rhymeAnalysis = buildRhymeAnalysis(structure, finalLines);
+  const rhymeAnalysis = buildRhymeAnalysis(structure, finalLines, context);
+  const form = detectPoeticForm(structure, rhymeAnalysis.annotatedLines, stanzaResults, rhymeAnalysis.rhyme, overallLabel, context);
 
   return {
     poem: normalized,
@@ -190,35 +381,45 @@ function finalizeAnalysis(structure, analyzedLines) {
     stanzaResults,
     lines: rhymeAnalysis.annotatedLines,
     rhyme: rhymeAnalysis.rhyme,
-    diagnostics: buildDiagnostics(rhymeAnalysis.annotatedLines, stanzaResults)
+    form,
+    diagnostics: buildDiagnostics(rhymeAnalysis.annotatedLines, stanzaResults, form)
   };
 }
 
-function streamAnalysis(poem, wantSummary) {
+function streamAnalysis({ poem, wantSummary, profileKey = 'modern', overrides = {} }) {
   const encoder = new TextEncoder();
   const structure = buildPoemStructure(poem);
+  const context = {
+    profile: resolveProfile(profileKey),
+    overrides: normalizeOverrides(overrides)
+  };
 
   const stream = new ReadableStream({
     async start(controller) {
       const send = (payload) => {
-        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+        controller.enqueue(encoder.encode(`${JSON.stringify({ apiVersion: API_VERSION, ...payload })}\n`));
       };
 
       try {
         const analyzedLines = Array.from({ length: structure.lineObjects.length });
 
         for (const line of structure.lineObjects) {
-          const result = line.blank ? createBlankLineAnalysis(line) : analyzeLine(line.text, line.index);
+          const result = line.blank ? createBlankLineAnalysis(line) : analyzeLine(line.text, line.index, context);
           analyzedLines[line.index] = result;
           send({ type: 'line', line: result });
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
 
-        const analysis = finalizeAnalysis(structure, analyzedLines);
+        const analysis = finalizeAnalysis(structure, analyzedLines, context);
         send({
           type: 'complete',
           analysis: {
             ...analysis,
+            profile: {
+              key: context.profile.key,
+              label: context.profile.label,
+              description: context.profile.description
+            },
             summary: null
           }
         });
@@ -237,26 +438,26 @@ function streamAnalysis(poem, wantSummary) {
 
   return new Response(stream, {
     status: 200,
-    headers: {
+    headers: corsHeaders({
       'content-type': 'application/x-ndjson; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
-      'access-control-allow-origin': '*'
-    }
+      'x-scansion-api-version': API_VERSION
+    })
   });
 }
 
-function analyzeLine(text, index) {
-  const tokens = tokenize(text);
-  const candidates = expandTokenCandidates(tokens);
-  const lineCandidates = composeLineCandidates(candidates, 192);
-  const ranked = rankMeters(lineCandidates, tokens);
+function analyzeLine(text, index, context) {
+  const tokens = tokenize(text).map((token) => ({ ...token, lineIndex: index }));
+  const candidates = expandTokenCandidates(tokens, context);
+  const lineCandidates = composeLineCandidates(candidates.map((entry) => entry.active), 192, context?.profile);
+  const ranked = rankMeters(lineCandidates, tokens, context);
   const scans = ranked.slice(0, 10).map((scan, i) => formatScan(scan, i === 0, tokens, text));
   const top = scans[0] || {
     meterLabel: 'accentual / mixed meter',
     confidence: 50
   };
 
-  return {
+  return hydrateLineMetadata({
     index,
     text,
     blank: false,
@@ -265,30 +466,34 @@ function analyzeLine(text, index) {
     scans,
     tokens: tokens.map((token, i) => ({
       ...token,
-      options: candidates[i].map((candidate) => ({
+      overrideApplied: Boolean(candidates[i].override),
+      options: candidates[i].options.map((candidate) => ({
         source: candidate.source,
         syllables: candidate.syllables,
         stressPattern: candidate.stress.join(''),
         pronunciation: candidate.pronunciation
       }))
     }))
-  };
+  });
 }
 
 function tokenize(text) {
   const parts = [];
   let match;
+  let tokenIndex = 0;
   while ((match = WORD_RE.exec(text)) !== null) {
     const raw = match[0];
     const cleaned = normalizeWord(raw);
     if (!cleaned) continue;
     parts.push({
+      index: tokenIndex,
       raw,
       normalized: cleaned,
       isFunctionWord: FUNCTION_WORDS.has(cleaned),
       start: match.index,
       end: match.index + raw.length
     });
+    tokenIndex += 1;
   }
   return parts;
 }
@@ -304,15 +509,89 @@ function normalizeWord(word) {
   return /[a-z]/.test(normalized) ? normalized : '';
 }
 
-function expandTokenCandidates(tokens) {
+function resolveProfile(profileKey) {
+  return SCAN_PROFILES[profileKey] || SCAN_PROFILES.modern;
+}
+
+function normalizeOverrides(overrides) {
+  const normalized = {
+    tokens: {},
+    words: {}
+  };
+
+  const tokenEntries = overrides?.tokens && typeof overrides.tokens === 'object' ? Object.entries(overrides.tokens) : [];
+  for (const [key, value] of tokenEntries) {
+    const override = normalizeOverrideValue(value);
+    if (!override) continue;
+    normalized.tokens[key] = override;
+  }
+
+  const wordEntries = overrides?.words && typeof overrides.words === 'object' ? Object.entries(overrides.words) : [];
+  for (const [key, value] of wordEntries) {
+    const override = normalizeOverrideValue(value);
+    if (!override) continue;
+    normalized.words[String(key).toLowerCase()] = override;
+  }
+
+  return normalized;
+}
+
+function normalizeOverrideValue(value) {
+  const stressPattern = String(value?.stressPattern || '').toLowerCase().replace(/[^su]/g, '');
+  if (!stressPattern) return null;
+  return {
+    stressPattern,
+    pronunciation: String(value?.pronunciation || value?.label || 'user override'),
+    label: String(value?.label || 'user override')
+  };
+}
+
+function getOverrideCandidate(token, overrides) {
+  if (!token || !overrides) return null;
+  const tokenKey = `${token.lineIndex ?? token.line ?? ''}:${token.index}`;
+  const override = overrides.tokens?.[tokenKey] || overrides.words?.[token.normalized];
+  if (!override) return null;
+
+  return {
+    pronunciation: override.pronunciation || `override:${token.raw}`,
+    syllables: override.stressPattern.length,
+    stress: override.stressPattern.split(''),
+    source: 'user-override'
+  };
+}
+
+function validatePoemLength(poem) {
+  if (String(poem || '').length > MAX_POEM_CHARS) {
+    const error = new Error(`Poems are limited to ${MAX_POEM_CHARS} characters.`);
+    error.statusCode = 413;
+    throw error;
+  }
+}
+
+function expandTokenCandidates(tokens, context) {
   return tokens.map((token, index) => {
-    const base = lookupPronunciations(token.normalized, token.raw, token.isFunctionWord);
-    const contextual = buildContextualCandidates(token, base, tokens[index - 1], tokens[index + 1]);
-    return rankPronunciationCandidates(dedupeCandidates([...base, ...contextual])).slice(0, 6);
+    const base = lookupPronunciations(token.normalized, token.raw, token.isFunctionWord, context?.profile);
+    const contextual = buildContextualCandidates(token, base, tokens[index - 1], tokens[index + 1], context?.profile);
+    const ranked = rankPronunciationCandidates(dedupeCandidates([...base, ...contextual]), context?.profile).slice(0, 8);
+    const override = getOverrideCandidate(token, context?.overrides);
+
+    if (!override) {
+      return {
+        options: ranked,
+        active: ranked
+      };
+    }
+
+    const merged = rankPronunciationCandidates(dedupeCandidates([override, ...ranked]), context?.profile).slice(0, 8);
+    return {
+      override,
+      options: merged,
+      active: [override]
+    };
   });
 }
 
-function lookupPronunciations(normalized, raw, isFunctionWord) {
+function lookupPronunciations(normalized, raw, isFunctionWord, profile) {
   const variants = new Set([normalized]);
   if (CLITICS.has(normalized)) variants.add(CLITICS.get(normalized));
   if (normalized.endsWith("'d")) variants.add(normalized.replace(/'d$/, 'ed'));
@@ -338,13 +617,15 @@ function lookupPronunciations(normalized, raw, isFunctionWord) {
       }));
     }));
     found.push(...found.flatMap((entry) => {
-      return buildPoeticStressVariants(normalized, entry.stress).map((stress, index) => ({
+      return buildPoeticStressVariants(normalized, entry.stress, profile).map((stress, index) => ({
         ...entry,
         syllables: stress.length,
         stress,
         source: `${entry.source}-poetic-${index + 1}`
       }));
     }));
+    found.push(...buildSyllabicEdCandidates(normalized, found, profile));
+    found.push(...buildHistoricAteCandidates(normalized, found, profile));
 
     if (isFunctionWord) {
       found.push(...found.map((entry) => ({
@@ -356,7 +637,7 @@ function lookupPronunciations(normalized, raw, isFunctionWord) {
     return found;
   }
 
-  return heuristicPronunciations(normalized, raw, isFunctionWord);
+  return heuristicPronunciations(normalized, raw, isFunctionWord, profile);
 }
 
 function collectDictionaryPronunciations(variants, normalized) {
@@ -480,10 +761,14 @@ function buildCompressedStressVariants(stress) {
   return [...variants.values()];
 }
 
-function buildPoeticStressVariants(normalized, stress) {
+function buildPoeticStressVariants(normalized, stress, profile) {
   const variants = new Map();
 
   for (const reduced of OPTIONAL_POETIC_REDUCTIONS.get(normalized) || []) {
+    variants.set(reduced.join(''), reduced);
+  }
+
+  for (const reduced of profile?.extraReductions?.[normalized] || []) {
     variants.set(reduced.join(''), reduced);
   }
 
@@ -500,7 +785,46 @@ function buildPoeticStressVariants(normalized, stress) {
   return [...variants.values()].filter((variant) => variant.join('') !== stress.join(''));
 }
 
-function heuristicPronunciations(normalized, raw, isFunctionWord) {
+function buildSyllabicEdCandidates(normalized, entries, profile) {
+  if (!profile?.syllabicEd) return [];
+  if (!normalized.endsWith('ed') || normalized.length <= 4) return [];
+
+  const variants = [];
+  for (const entry of entries) {
+    if (!entry.source.includes('cmu') || entry.syllables < 1 || entry.stress.at(-1) === 'u') continue;
+    const expanded = [...entry.stress, 'u'];
+    variants.push({
+      ...entry,
+      syllables: expanded.length,
+      stress: expanded,
+      source: `${entry.source}-syllabic-ed`
+    });
+  }
+
+  return variants;
+}
+
+function buildHistoricAteCandidates(normalized, entries, profile) {
+  if (profile?.key !== 'early_modern') return [];
+  if (!normalized.endsWith('ate') || normalized.length <= 5) return [];
+
+  const variants = [];
+  for (const entry of entries) {
+    if (!entry.source.includes('cmu') || entry.syllables !== 2) continue;
+    const expanded = ['s', 'u', 's'];
+    variants.push({
+      ...entry,
+      pronunciation: `historical:${normalized}`,
+      syllables: expanded.length,
+      stress: expanded,
+      source: `${entry.source}-historic-ate`
+    });
+  }
+
+  return variants;
+}
+
+function heuristicPronunciations(normalized, raw, isFunctionWord, profile) {
   const syllableCount = estimateSyllables(normalized);
   const primary = [];
 
@@ -522,11 +846,11 @@ function heuristicPronunciations(normalized, raw, isFunctionWord) {
     pronunciation: `heuristic:${raw}`,
     syllables: syllableCount,
     stress,
-    source: idx === 0 ? 'heuristic-primary' : 'heuristic-alt'
+    source: `${idx === 0 ? 'heuristic-primary' : 'heuristic-alt'}${profile?.key === 'early_modern' && normalized.endsWith('ed') ? '-historic' : ''}`
   }));
 }
 
-function buildContextualCandidates(token, candidates, prevToken, nextToken) {
+function buildContextualCandidates(token, candidates, prevToken, nextToken, profile) {
   const contextual = [];
 
   if (token.isFunctionWord) {
@@ -535,7 +859,7 @@ function buildContextualCandidates(token, candidates, prevToken, nextToken) {
       contextual.push({
         ...candidate,
         stress: ['s'],
-        source: `${candidate.source}-${STRESSABLE_FUNCTION_WORDS.has(token.normalized) ? 'promoted' : 'promoted-rare'}`
+        source: `${candidate.source}-${STRESSABLE_FUNCTION_WORDS.has(token.normalized) ? 'promoted' : 'promoted-rare'}${profile?.key === 'hymn' ? '-profile' : ''}`
       });
     }
   }
@@ -610,11 +934,11 @@ function shouldConsiderNominalStress(token, prevToken, nextToken) {
   return NOMINAL_CONTEXT_WORDS.has(prev) || NOMINAL_FOLLOWER_WORDS.has(next);
 }
 
-function rankPronunciationCandidates(candidates) {
-  return [...candidates].sort((a, b) => pronunciationCandidateCost(a) - pronunciationCandidateCost(b));
+function rankPronunciationCandidates(candidates, profile) {
+  return [...candidates].sort((a, b) => pronunciationCandidateCost(a, profile) - pronunciationCandidateCost(b, profile));
 }
 
-function pronunciationCandidateCost(candidate) {
+function pronunciationCandidateCost(candidate, profile) {
   const source = candidate.source;
   let cost = 0;
 
@@ -631,6 +955,12 @@ function pronunciationCandidateCost(candidate) {
   if (source.includes('compressed')) cost += 1.2;
   if (source.includes('flex-weak')) cost += 1.35;
   if (source.includes('compound-shift')) cost += 1.1;
+  if (source.includes('syllabic-ed')) cost += 0.5;
+  if (source.includes('historic')) cost += 0.15;
+
+  if (source.includes('poetic')) cost += profile?.poeticCostShift || 0;
+  if (source.includes('contextual')) cost += profile?.contextualCostShift || 0;
+  if (source.includes('promoted')) cost += profile?.promoteCostShift || 0;
 
   return cost + candidate.syllables * 0.01;
 }
@@ -660,7 +990,7 @@ function dedupeCandidates(candidates) {
   return out;
 }
 
-function composeLineCandidates(tokenCandidates, limit = 128) {
+function composeLineCandidates(tokenCandidates, limit = 128, profile) {
   if (!tokenCandidates.length) return [];
   let states = [{ pieces: [], stress: [], syllables: 0, sources: [] }];
 
@@ -676,14 +1006,14 @@ function composeLineCandidates(tokenCandidates, limit = 128) {
         });
       }
     }
-    next.sort((a, b) => scoreCandidateSimplicity(a) - scoreCandidateSimplicity(b));
+    next.sort((a, b) => scoreCandidateSimplicity(a, profile) - scoreCandidateSimplicity(b, profile));
     states = next.slice(0, limit);
   }
 
   return states;
 }
 
-function scoreCandidateSimplicity(candidate) {
+function scoreCandidateSimplicity(candidate, profile) {
   return candidate.sources.reduce((sum, source) => {
     let cost = 0;
     if (source.startsWith('heuristic')) cost += 3;
@@ -695,28 +1025,34 @@ function scoreCandidateSimplicity(candidate) {
     if (source.includes('promoted-rare')) cost += 0.7;
     if (source.includes('flex-weak')) cost += 1.1;
     if (source.includes('compound-shift')) cost += 0.8;
+    if (source.includes('syllabic-ed')) cost += 0.45;
+    if (source.includes('historic')) cost += 0.12;
+    if (source.includes('poetic')) cost += profile?.poeticCostShift || 0;
+    if (source.includes('contextual')) cost += profile?.contextualCostShift || 0;
+    if (source.includes('promoted')) cost += profile?.promoteCostShift || 0;
     return sum + cost;
   }, 0) + candidate.syllables * 0.01;
 }
 
-function rankMeters(lineCandidates, tokens) {
+function rankMeters(lineCandidates, tokens, context) {
   const results = [];
 
   for (const candidate of lineCandidates) {
     for (const meter of METER_LIBRARY) {
       if (meter.key === 'accentual_loose') continue;
-      const scored = scoreAgainstMeter(candidate, meter, tokens);
+      const scored = scoreAgainstMeter(candidate, meter, tokens, context);
       results.push(scored);
     }
 
-    results.push(scoreAccentual(candidate, tokens));
+    results.push(scoreAccentual(candidate, tokens, context));
   }
 
   results.sort((a, b) => a.penalty - b.penalty || b.confidence - a.confidence);
   return dedupeScans(results).slice(0, 8);
 }
 
-function scoreAgainstMeter(candidate, meter, tokens) {
+function scoreAgainstMeter(candidate, meter, tokens, context) {
+  const profile = context?.profile;
   const target = Array.from({ length: meter.feet }).flatMap(() => meter.pattern);
   const actual = candidate.stress;
   const observations = [];
@@ -749,6 +1085,14 @@ function scoreAgainstMeter(candidate, meter, tokens) {
     observations.push('initial inversion');
   }
 
+  if (profile?.key === 'hymn' && meter.family === 'iambic' && (meter.feet === 3 || meter.feet === 4)) {
+    penalty -= profile.tetrameterBonus;
+  }
+
+  if (profile?.key === 'early_modern' && meter.key === 'iambic_pentameter') {
+    penalty -= profile.pentameterBonus;
+  }
+
   const heuristicCount = candidate.sources.filter((source) => source.startsWith('heuristic')).length;
   penalty += heuristicCount * 0.5;
 
@@ -773,11 +1117,11 @@ function scoreAgainstMeter(candidate, meter, tokens) {
   };
 }
 
-function scoreAccentual(candidate, tokens) {
+function scoreAccentual(candidate, tokens, context) {
   const stresses = candidate.stress.filter((x) => x === 's').length;
   const heuristicCount = candidate.sources.filter((source) => source.startsWith('heuristic')).length;
   const irregularity = Math.abs(candidate.stress.length - stresses * 2);
-  const penalty = 3 + irregularity * 0.6 + heuristicCount * 0.4;
+  const penalty = 3 + irregularity * 0.6 + heuristicCount * 0.4 + (context?.profile?.key === 'hymn' ? 0.4 : 0);
   return {
     meterKey: 'accentual_loose',
     meterLabel: 'accentual / mixed meter',
@@ -932,9 +1276,9 @@ function findNearestWritable(chars, pos, limit) {
   return clamp(pos, 0, Math.max(0, limit - 1));
 }
 
-function selectStanzaReadings(lines) {
+function selectStanzaReadings(lines, context) {
   if (lines.length === 4) {
-    return selectQuatrainReadings(lines);
+    return selectQuatrainReadings(lines, context);
   }
 
   const choice = chooseStanzaDominant(lines);
@@ -947,19 +1291,19 @@ function selectStanzaReadings(lines) {
   };
 }
 
-function selectQuatrainReadings(lines) {
+function selectQuatrainReadings(lines, context) {
   const options = lines.map((line) => line.scans.slice(0, 8));
   let best = null;
 
   for (const first of options[0]) {
     for (const second of options[1]) {
-      for (const third of options[2]) {
-        for (const fourth of options[3]) {
-          const combo = [first, second, third, fourth];
-          const evaluation = scoreQuatrainCombo(combo);
-          const score = combo.reduce((sum, scan) => sum + scan.confidence, 0) + evaluation.bonus;
-          if (!best || score > best.score) {
-            best = { ...evaluation, combo, score };
+        for (const third of options[2]) {
+          for (const fourth of options[3]) {
+            const combo = [first, second, third, fourth];
+            const evaluation = scoreQuatrainCombo(combo, context);
+            const score = combo.reduce((sum, scan) => sum + scan.confidence, 0) + evaluation.bonus;
+            if (!best || score > best.score) {
+              best = { ...evaluation, combo, score };
           }
         }
       }
@@ -990,7 +1334,7 @@ function selectQuatrainReadings(lines) {
   };
 }
 
-function scoreQuatrainCombo(combo) {
+function scoreQuatrainCombo(combo, context) {
   const defs = combo.map((scan) => getMeterDefinition(scan.meterKey));
   const families = defs.map((def) => def.family);
   const feet = defs.map((def) => def.feet);
@@ -1041,6 +1385,12 @@ function scoreQuatrainCombo(combo) {
   bonus += footRange <= 1 ? 4 : -(footRange - 1) * 8;
   bonus -= weakFits;
 
+  if (context?.profile?.key === 'hymn' && sameFamily && footGap === 1) {
+    if (alternating || invertedAlternating) {
+      bonus += context.profile.commonMeterBonus;
+    }
+  }
+
   return { bonus, patternLabel };
 }
 
@@ -1061,12 +1411,12 @@ function applySelectedScan(line, selectedScan, boost) {
     }))
   ];
 
-  return {
+  return hydrateLineMetadata({
     ...line,
     tag: rescored[0].meterLabel,
     confidence: rescored[0].confidence,
     scans: rescored
-  };
+  });
 }
 
 function scanIdentity(scan) {
@@ -1088,7 +1438,7 @@ function modeCount(values) {
   return best;
 }
 
-function inferOverallMeter(lines, stanzaResults, meterTally) {
+function inferOverallMeter(lines, stanzaResults, meterTally, context) {
   const nonBlank = lines.filter((line) => !line.blank);
   const topKeys = nonBlank.map((line) => line.scans[0]?.meterKey).filter(Boolean);
   const iambicCommonCount = topKeys.filter((key) => key === 'iambic_tetrameter' || key === 'iambic_trimeter').length;
@@ -1104,15 +1454,29 @@ function inferOverallMeter(lines, stanzaResults, meterTally) {
     return 'common_meter';
   }
 
+  if (
+    context?.profile?.key === 'hymn' &&
+    nonBlank.length >= 4 &&
+    iambicCommonCount / nonBlank.length >= 0.65 &&
+    commonStanzaCount >= 1
+  ) {
+    return 'common_meter';
+  }
+
   return [...meterTally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'accentual_loose';
 }
 
-function buildRhymeAnalysis(structure, lines) {
+function buildRhymeAnalysis(structure, lines, context) {
+  const groups = [];
   const stanzaAnalyses = structure.stanzas.map((stanzaLines, stanzaIndex) => {
-    return analyzeStanzaRhyme(stanzaLines, lines, stanzaIndex);
+    return analyzeStanzaRhyme(stanzaLines, lines, stanzaIndex, groups, context);
   });
 
-  const lineDetails = stanzaAnalyses.flatMap((stanza) => stanza.lines);
+  const groupQualityByLetter = new Map(groups.map((group) => [group.letter, summarizeRhymeGroupQuality(group)]));
+  const lineDetails = stanzaAnalyses.flatMap((stanza) => stanza.lines).map((detail) => ({
+    ...detail,
+    groupQuality: groupQualityByLetter.get(detail.letter) || detail.groupQuality || ''
+  }));
   const detailByIndex = new Map(lineDetails.map((detail) => [detail.index, detail]));
   const annotatedLines = lines.map((line) => {
     if (line.blank) return line;
@@ -1121,7 +1485,9 @@ function buildRhymeAnalysis(structure, lines) {
       ...line,
       rhymeLetter: detail?.letter || '',
       rhymeWord: detail?.word || '',
-      rhymeMatchType: detail?.matchType || ''
+      rhymeMatchType: detail?.matchType || '',
+      rhymeExplanation: detail?.explanation || '',
+      rhymeGroupQuality: detail?.groupQuality || ''
     };
   });
 
@@ -1129,38 +1495,67 @@ function buildRhymeAnalysis(structure, lines) {
     annotatedLines,
     rhyme: {
       overallScheme: stanzaAnalyses.map((stanza) => stanza.scheme).join(' / '),
+      globalScheme: lineDetails.map((detail) => detail.letter).join(''),
       stanzas: stanzaAnalyses,
-      lines: lineDetails
+      lines: lineDetails,
+      groups: groups.map((group) => ({
+        letter: group.letter,
+        quality: summarizeRhymeGroupQuality(group),
+        lines: group.members.map((member) => ({
+          index: member.index,
+          text: member.text,
+          word: member.word,
+          matchType: member.matchType,
+          explanation: member.explanation
+        }))
+      }))
     }
   };
 }
 
-function analyzeStanzaRhyme(stanzaLines, lines, stanzaIndex) {
-  const groups = [];
+function analyzeStanzaRhyme(stanzaLines, lines, stanzaIndex, groups, context) {
   const details = stanzaLines.map((stanzaLine) => {
     const line = lines[stanzaLine.index];
-    const profile = buildLineRhymeProfile(line);
+    const profile = buildLineRhymeProfile(line, context?.profile);
     const match = findRhymeGroup(profile, groups);
 
     if (match) {
       match.group.perfectKeys.add(profile.perfectKey);
       match.group.tailKeys.add(profile.tailKey);
+      match.group.vowelKeys.add(profile.vowelKey);
+      match.group.codaKeys.add(profile.codaKey);
       match.group.orthographicTails.add(profile.orthographicTail);
+      match.group.words.add(profile.normalizedWord);
     } else {
       groups.push({
         letter: indexToSchemeLabel(groups.length),
         perfectKeys: new Set(profile.perfectKey ? [profile.perfectKey] : []),
         tailKeys: new Set(profile.tailKey ? [profile.tailKey] : []),
-        orthographicTails: new Set(profile.orthographicTail ? [profile.orthographicTail] : [])
+        vowelKeys: new Set(profile.vowelKey ? [profile.vowelKey] : []),
+        codaKeys: new Set(profile.codaKey ? [profile.codaKey] : []),
+        orthographicTails: new Set(profile.orthographicTail ? [profile.orthographicTail] : []),
+        words: new Set(profile.normalizedWord ? [profile.normalizedWord] : []),
+        members: []
       });
     }
 
     const group = match?.group || groups.at(-1);
+    const matchType = match?.type || 'unique';
+    const explanation = match?.explanation || 'Opens a new rhyme sound.';
+    group.members.push({
+      index: line.index,
+      text: line.text,
+      word: profile.word,
+      matchType,
+      explanation
+    });
     return {
       index: line.index,
       letter: group.letter,
       word: profile.word,
-      matchType: match?.type || 'unique',
+      matchType,
+      explanation,
+      groupQuality: summarizeRhymeGroupQuality(group),
       pronunciation: profile.pronunciation,
       perfectKey: profile.perfectKey,
       tailKey: profile.tailKey
@@ -1171,11 +1566,12 @@ function analyzeStanzaRhyme(stanzaLines, lines, stanzaIndex) {
     stanzaIndex,
     lineIndexes: stanzaLines.map((line) => line.index),
     scheme: details.map((detail) => detail.letter).join(''),
-    lines: details
+    lines: details,
+    quality: summarizeStanzaRhymeQuality(details)
   };
 }
 
-function buildLineRhymeProfile(line) {
+function buildLineRhymeProfile(line, profile) {
   const token = line.tokens?.at(-1);
   const variant = line.scans?.[0]?.variants?.[line.tokens.length - 1];
   const word = token?.raw || '';
@@ -1184,10 +1580,13 @@ function buildLineRhymeProfile(line) {
 
   return {
     word,
+    normalizedWord: token?.normalized || '',
     pronunciation,
     perfectKey: extractPerfectRhymeKey(phonemes),
     tailKey: extractTailRhymeKey(phonemes),
-    orthographicTail: extractOrthographicTail(token?.normalized || '')
+    vowelKey: extractLastVowelKey(phonemes),
+    codaKey: extractCodaKey(phonemes),
+    orthographicTail: extractOrthographicTail(token?.normalized || '', profile)
   };
 }
 
@@ -1262,36 +1661,172 @@ function extractTailRhymeKey(phonemes) {
   return phonemes.slice(startIndex).map(stripStress).join(' ');
 }
 
-function extractOrthographicTail(word) {
+function extractLastVowelKey(phonemes) {
+  for (let i = phonemes.length - 1; i >= 0; i -= 1) {
+    if (/\d$/.test(phonemes[i])) {
+      return stripStress(phonemes[i]);
+    }
+  }
+  return '';
+}
+
+function extractCodaKey(phonemes) {
+  const lastVowel = findLastPronouncedVowelIndex(phonemes);
+  if (lastVowel < 0) return '';
+  return phonemes.slice(lastVowel + 1).map(stripStress).join(' ');
+}
+
+function findLastPronouncedVowelIndex(phonemes) {
+  for (let i = phonemes.length - 1; i >= 0; i -= 1) {
+    if (/\d$/.test(phonemes[i])) return i;
+  }
+  return -1;
+}
+
+function extractOrthographicTail(word, profile) {
   if (!word) return '';
   const cleaned = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!cleaned) return '';
-  const match = cleaned.match(/[aeiouy][a-z]*$/);
-  return match ? match[0] : cleaned.slice(-3);
+  if (profile?.key === 'early_modern') {
+    if (/(er|or|ur)ate$/.test(cleaned)) {
+      return 'ate';
+    }
+    if (/ere$/.test(cleaned) || /eer$/.test(cleaned)) {
+      return 'eer';
+    }
+  }
+  let effectiveEnd = cleaned.length;
+  const hasSilentTrailingE = /[^aeiouy]e$/.test(cleaned) && !/le$/.test(cleaned);
+  if (hasSilentTrailingE) {
+    effectiveEnd -= 1;
+  }
+  let vowelIndex = -1;
+  for (let index = effectiveEnd - 1; index >= 0; index -= 1) {
+    if (/[aeiouy]/.test(cleaned[index])) {
+      vowelIndex = index;
+      break;
+    }
+  }
+  const tail = vowelIndex >= 0
+    ? `${cleaned.slice(vowelIndex, effectiveEnd)}${hasSilentTrailingE ? 'e' : ''}`
+    : cleaned.slice(Math.max(0, effectiveEnd - 3), effectiveEnd);
+  return tail || cleaned.slice(-3);
 }
 
 function findRhymeGroup(profile, groups) {
   if (!profile.perfectKey && !profile.tailKey && !profile.orthographicTail) return null;
 
+  let best = null;
+
   for (const group of groups) {
-    if (profile.perfectKey && group.perfectKeys.has(profile.perfectKey)) {
-      return { group, type: 'perfect' };
+    const match = classifyRhymeGroupMatch(profile, group);
+    if (!match) continue;
+    if (!best || match.score > best.score) {
+      best = match;
     }
   }
 
-  for (const group of groups) {
-    if (profile.tailKey && group.tailKeys.has(profile.tailKey)) {
-      return { group, type: 'tail' };
-    }
+  return best && best.score >= 56 ? best : null;
+}
+
+function classifyRhymeGroupMatch(profile, group) {
+  if (profile.perfectKey && group.perfectKeys.has(profile.perfectKey)) {
+    return {
+      group,
+      type: 'perfect',
+      score: 100,
+      explanation: 'Matches the stressed vowel and the full closing sound.'
+    };
   }
 
-  for (const group of groups) {
-    if (profile.orthographicTail && group.orthographicTails.has(profile.orthographicTail)) {
-      return { group, type: 'orthographic' };
-    }
+  if (profile.tailKey && group.tailKeys.has(profile.tailKey)) {
+    return {
+      group,
+      type: 'perfect',
+      score: 96,
+      explanation: 'Matches the closing vowel-to-end tail exactly.'
+    };
+  }
+
+  const sameVowel = Boolean(profile.vowelKey && group.vowelKeys.has(profile.vowelKey));
+  const sameCoda = Boolean(profile.codaKey && group.codaKeys.has(profile.codaKey));
+  const sameSpelling = Boolean(profile.orthographicTail && group.orthographicTails.has(profile.orthographicTail));
+  const orthographicSimilarity = suffixSimilarity(profile.orthographicTail, [...group.orthographicTails].filter(Boolean));
+
+  if (sameVowel && sameCoda) {
+    return {
+      group,
+      type: 'slant',
+      score: 86,
+      explanation: 'Shares the same vowel and closing consonant frame, but not the exact stressed rhyme key.'
+    };
+  }
+
+  if ((sameVowel && orthographicSimilarity >= 0.7) || (sameCoda && orthographicSimilarity >= 0.82)) {
+    return {
+      group,
+      type: sameVowel ? 'slant' : 'consonance',
+      score: sameVowel ? 74 : 64,
+      explanation: sameVowel
+        ? 'Leans on a shared vowel sound with some supporting spelling similarity.'
+        : 'Leans on a shared consonant closure more than a shared vowel sound.'
+    };
+  }
+
+  if (sameSpelling) {
+    return {
+      group,
+      type: 'eye',
+      score: 66,
+      explanation: 'Matches by spelling more strongly than by pronunciation.'
+    };
+  }
+
+  if (orthographicSimilarity >= 0.7) {
+    return {
+      group,
+      type: 'weak',
+      score: 58,
+      explanation: 'Shows a loose spelling resemblance, but the sound match is weak.'
+    };
   }
 
   return null;
+}
+
+function suffixSimilarity(value, candidates) {
+  if (!value || !candidates.length) return 0;
+  let best = 0;
+  for (const candidate of candidates) {
+    const shared = sharedSuffixLength(value, candidate);
+    best = Math.max(best, shared / Math.max(value.length, candidate.length, 1));
+  }
+  return best;
+}
+
+function sharedSuffixLength(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  let count = 0;
+  while (
+    count < left.length &&
+    count < right.length &&
+    left[left.length - 1 - count] === right[right.length - 1 - count]
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
+function summarizeRhymeGroupQuality(group) {
+  const priority = ['perfect', 'slant', 'consonance', 'eye', 'weak', 'unique'];
+  const types = [...new Set(group.members.map((member) => member.matchType))];
+  return priority.find((type) => types.includes(type)) || 'unique';
+}
+
+function summarizeStanzaRhymeQuality(details) {
+  const priority = ['weak', 'eye', 'consonance', 'slant', 'perfect'];
+  return priority.find((type) => details.some((detail) => detail.matchType === type)) || 'perfect';
 }
 
 function stripStress(phoneme) {
@@ -1331,25 +1866,238 @@ function adjustLineWithStanzaContext(line, stanza) {
   }).sort((a, b) => b.confidence - a.confidence);
 
   const top = rescored[0];
-  return {
+  return hydrateLineMetadata({
     ...line,
     tag: top.meterLabel,
     confidence: top.confidence,
     scans: rescored
+  });
+}
+
+function detectPoeticForm(structure, lines, stanzaResults, rhyme, overallMeter, context) {
+  const nonBlank = lines.filter((line) => !line.blank);
+  const schemes = rhyme.stanzas.map((stanza) => stanza.scheme);
+  const flatScheme = rhyme.globalScheme || schemes.join('');
+  const pentameterRatio = ratioOfMeter(nonBlank, 'iambic_pentameter');
+  const tetrameterRatio = ratioOfMeter(nonBlank, 'iambic_tetrameter');
+  const trimeterRatio = ratioOfMeter(nonBlank, 'iambic_trimeter');
+
+  const candidates = [];
+
+  if (
+    nonBlank.length === 14 &&
+    pentameterRatio >= 0.75 &&
+    flatScheme === 'ABABCDCDEFEFGG'
+  ) {
+    candidates.push({
+      key: 'shakespearean_sonnet',
+      label: 'Shakespearean sonnet',
+      confidence: 98,
+      explanation: 'Fourteen mostly iambic pentameter lines lock into the classic ABABCDCDEFEFGG rhyme pattern.',
+      signals: ['14 lines', 'iambic pentameter', 'ABABCDCDEFEFGG']
+    });
+  }
+
+  if (
+    overallMeter === 'common meter' &&
+    structure.stanzas.every((stanza) => stanza.length === 4)
+  ) {
+    const mostlyAlternating = stanzaResults.filter((stanza) => {
+      return stanza.patternLabel === 'alternating quatrain' || stanza.patternLabel === 'inverted alternating quatrain';
+    }).length >= Math.max(1, Math.ceil(stanzaResults.length * 0.5));
+    if (mostlyAlternating) {
+      candidates.push({
+        key: context?.profile?.key === 'hymn' ? 'hymn_common_meter' : 'common_meter_ballad',
+        label: context?.profile?.key === 'hymn' ? 'Hymn in common meter' : 'Ballad / common meter quatrains',
+        confidence: context?.profile?.key === 'hymn' ? 95 : 92,
+        explanation: 'Alternating iambic tetrameter and trimeter lines create a recognizable common-meter quatrain pattern.',
+        signals: ['quatrains', 'common meter', 'alternating 8/6 line lengths']
+      });
+    }
+  }
+
+  if (
+    pentameterRatio >= 0.8 &&
+    isCoupletScheme(flatScheme)
+  ) {
+    candidates.push({
+      key: 'heroic_couplets',
+      label: 'Heroic couplets',
+      confidence: 90,
+      explanation: 'The poem leans on iambic pentameter and closes its rhyme in consecutive paired couplets.',
+      signals: ['iambic pentameter', 'paired rhyme']
+    });
+  }
+
+  if (
+    pentameterRatio >= 0.85 &&
+    isMostlyUnrhymed(rhyme)
+  ) {
+    candidates.push({
+      key: 'blank_verse',
+      label: 'Blank verse',
+      confidence: 84,
+      explanation: 'The poem is dominated by iambic pentameter while avoiding a strong repeated rhyme scheme.',
+      signals: ['iambic pentameter', 'low rhyme recurrence']
+    });
+  }
+
+  if (
+    tetrameterRatio >= 0.85 &&
+    structure.stanzas.length >= 2 &&
+    structure.stanzas.every((stanza) => stanza.length === 4) &&
+    isRubaiyatChain(schemes)
+  ) {
+    candidates.push({
+      key: 'rubaiyat_chain',
+      label: 'Rubaiyat-style chain quatrains',
+      confidence: 93,
+      explanation: 'The quatrains chain their rhyme forward in the AABA / BBCB / CCDC pattern while holding steady iambic tetrameter.',
+      signals: ['quatrains', 'iambic tetrameter', 'AABA / BBCB chain rhyme']
+    });
+  }
+
+  if (
+    pentameterRatio >= 0.72 &&
+    isTerzaRimaChain(schemes)
+  ) {
+    candidates.push({
+      key: 'terza_rima',
+      label: 'Terza rima',
+      confidence: 90,
+      explanation: 'The poem chains its tercet rhymes forward in the characteristic ABA / BCB / CDC pattern while sustaining a predominantly iambic pentameter line.',
+      signals: ['chain-linked tercets', 'iambic pentameter', 'ABA / BCB / CDC']
+    });
+  }
+
+  if (looksLikeVillanelle(structure, flatScheme)) {
+    candidates.push({
+      key: 'villanelle_components',
+      label: 'Villanelle components',
+      confidence: 88,
+      explanation: 'The poem matches the villanelle stanza scaffold of five tercets followed by a quatrain, with the expected ABA ... ABAA rhyme frame and repeating line endings.',
+      signals: ['19 lines', 'five tercets and a quatrain', 'ABA ... ABAA']
+    });
+  }
+
+  candidates.sort((a, b) => b.confidence - a.confidence);
+  return {
+    primary: candidates[0] || null,
+    candidates
   };
 }
 
-function buildDiagnostics(lines, stanzaResults) {
+function ratioOfMeter(lines, meterKey) {
+  if (!lines.length) return 0;
+  return lines.filter((line) => line.scans[0]?.meterKey === meterKey).length / lines.length;
+}
+
+function isCoupletScheme(flatScheme) {
+  if (!flatScheme || flatScheme.length < 4 || flatScheme.length % 2 !== 0) return false;
+  for (let index = 0; index < flatScheme.length; index += 2) {
+    if (flatScheme[index] !== flatScheme[index + 1]) return false;
+  }
+  return true;
+}
+
+function isMostlyUnrhymed(rhyme) {
+  const repeated = new Map();
+  for (const detail of rhyme.lines || []) {
+    repeated.set(detail.letter, (repeated.get(detail.letter) || 0) + 1);
+  }
+  const repeatedGroups = [...repeated.values()].filter((value) => value > 1).length;
+  return repeatedGroups <= Math.max(1, Math.floor(repeated.size / 4));
+}
+
+function isRubaiyatChain(schemes) {
+  if (!schemes.length || schemes.some((scheme) => scheme.length !== 4)) return false;
+  for (let index = 0; index < schemes.length; index += 1) {
+    const scheme = schemes[index];
+    if (index === schemes.length - 1) {
+      if (scheme[0] !== scheme[1] || scheme[1] !== scheme[2] || scheme[2] !== scheme[3]) return false;
+      continue;
+    }
+
+    if (!(scheme[0] === scheme[1] && scheme[1] === scheme[3] && scheme[2] !== scheme[0])) {
+      return false;
+    }
+
+    if (index < schemes.length - 1 && schemes[index + 1][0] !== scheme[2]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isTerzaRimaChain(schemes) {
+  if (!schemes.length || schemes.some((scheme, index) => {
+    if (index === schemes.length - 1) {
+      return !(scheme.length === 3 || scheme.length === 1);
+    }
+    return scheme.length !== 3;
+  })) {
+    return false;
+  }
+
+  for (let index = 0; index < schemes.length; index += 1) {
+    const scheme = schemes[index];
+    if (scheme.length === 3) {
+      if (scheme[0] !== scheme[2] || scheme[0] === scheme[1]) {
+        return false;
+      }
+      if (index < schemes.length - 1) {
+        const next = schemes[index + 1];
+        if (next.length >= 2 && next[0] !== scheme[1]) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+function looksLikeVillanelle(structure, flatScheme) {
+  const stanzaLengths = structure.stanzas.map((stanza) => stanza.length);
+  if (stanzaLengths.join(',') !== '3,3,3,3,3,4') return false;
+  if (flatScheme !== 'ABAABACABAABACABAA') return false;
+
+  const nonBlank = structure.lineObjects.filter((line) => !line.blank);
+  const firstRefrain = normalizeLineEnding(nonBlank[0]?.text || '');
+  const secondRefrain = normalizeLineEnding(nonBlank[2]?.text || '');
+  const repeatedFirst = [5, 11, 17].every((index) => normalizeLineEnding(nonBlank[index]?.text || '') === firstRefrain);
+  const repeatedSecond = [8, 14, 18].every((index) => normalizeLineEnding(nonBlank[index]?.text || '') === secondRefrain);
+  return repeatedFirst && repeatedSecond;
+}
+
+function normalizeLineEnding(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(-3)
+    .join(' ');
+}
+
+function buildDiagnostics(lines, stanzaResults, form) {
   const nonBlank = lines.filter((line) => !line.blank);
   const avgConfidence = nonBlank.length
     ? Math.round(nonBlank.reduce((sum, line) => sum + line.confidence, 0) / nonBlank.length)
     : 0;
   const fallbackWords = nonBlank.flatMap((line) => line.tokens).filter((token) => token.options.some((o) => o.source.startsWith('heuristic'))).map((t) => t.raw);
+  const feminineEndingLines = nonBlank
+    .filter((line) => line.scans[0]?.observations?.includes('feminine ending'))
+    .map((line) => line.index + 1);
   return {
     averageLineConfidence: avgConfidence,
     stanzaCount: stanzaResults.length,
     lineCount: nonBlank.length,
-    heuristicWords: [...new Set(fallbackWords)]
+    heuristicWords: [...new Set(fallbackWords)],
+    feminineEndingCount: feminineEndingLines.length,
+    feminineEndingLines,
+    benchmarkReady: true,
+    detectedForm: form?.primary?.label || ''
   };
 }
 
@@ -1426,7 +2174,10 @@ function fallbackSummary(analysis) {
     ? ` A few words required fallback pronunciation guesses: ${analysis.diagnostics.heuristicWords.slice(0, 6).join(', ')}${analysis.diagnostics.heuristicWords.length > 6 ? ', …' : ''}.`
     : '';
   const rhyme = analysis.rhyme?.overallScheme ? ` The rhyme scheme reads ${analysis.rhyme.overallScheme}.` : '';
-  return `${capitalize(analysis.overallMeter)} appears to govern the poem overall, with stanza-level agreement pushing the reading above line-by-line noise.${rhyme} The scan is strongest where multiple lines converge on the same stress architecture and weaker where lexical variants or extra unstressed syllables open alternate parses.${uncertain}`;
+  const feminineEndings = analysis.diagnostics.feminineEndingCount
+    ? ` Feminine endings appear on ${analysis.diagnostics.feminineEndingCount} line${analysis.diagnostics.feminineEndingCount === 1 ? '' : 's'}.`
+    : '';
+  return `${capitalize(analysis.overallMeter)} appears to govern the poem overall, with stanza-level agreement pushing the reading above line-by-line noise.${rhyme}${feminineEndings} The scan is strongest where multiple lines converge on the same stress architecture and weaker where lexical variants or extra unstressed syllables open alternate parses.${uncertain}`;
 }
 
 function capitalize(value) {
@@ -1437,12 +2188,19 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function corsHeaders(extra = {}) {
+  return {
+    'access-control-allow-origin': '*',
+    'x-scansion-api-version': API_VERSION,
+    ...extra
+  };
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': '*'
-    }
+    headers: corsHeaders({
+      'content-type': 'application/json; charset=utf-8'
+    })
   });
 }

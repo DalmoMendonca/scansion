@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scansion Benchmarks</title>
+    <style>
+      :root {
+        --fg: #181612;
+        --muted: #6f695e;
+        --line: rgba(24, 22, 18, 0.12);
+        --good: #1d5b39;
+        --warn: #8a5b12;
+        --bad: #8b2d2d;
+        --surface: #ffffff;
+        --font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+        --poem-font: "Constantia", "Cambria", Georgia, serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: var(--fg);
+        font-family: var(--font);
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 24px 48px;
+        display: grid;
+        gap: 18px;
+      }
+      h1, h2, h3, p { margin: 0; }
+      .hero {
+        display: grid;
+        gap: 8px;
+      }
+      .hero p {
+        color: var(--muted);
+        max-width: 760px;
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+      .cards {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .card, .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface);
+      }
+      .card {
+        padding: 16px 18px;
+        display: grid;
+        gap: 8px;
+      }
+      .card-label {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .card-value {
+        font-family: var(--poem-font);
+        font-size: 30px;
+      }
+      .panel {
+        padding: 18px 20px;
+        display: grid;
+        gap: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        font-size: 14px;
+      }
+      th {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .status-good { color: var(--good); }
+      .status-bad { color: var(--bad); }
+      .muted { color: var(--muted); }
+      .poem-title {
+        font-family: var(--poem-font);
+        font-size: 24px;
+      }
+      .poem-meta {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .poem-list {
+        display: grid;
+        gap: 12px;
+      }
+      .poem-card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px 18px;
+        display: grid;
+        gap: 10px;
+      }
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>Benchmark dashboard</h1>
+        <p>
+          This dashboard is generated from a fixed source-of-truth corpus. It tracks poem-level passes, line-level meter accuracy, category rollups, and confidence calibration so heuristic changes improve the engine instead of merely gaming a few poems.
+        </p>
+      </section>
+
+      <div id="app" class="grid">
+        <section class="panel"><p class="muted">Loading benchmark report…</p></section>
+      </div>
+    </main>
+
+    <script>
+      const app = document.getElementById('app');
+
+      fetch('/benchmarks.json')
+        .then((response) => {
+          if (!response.ok) throw new Error('Benchmark report not found.');
+          return response.json();
+        })
+        .then((report) => {
+          app.innerHTML = `
+            <section class="cards">
+              <article class="card">
+                <div class="card-label">Poem pass rate</div>
+                <div class="card-value">${percent(report.summary.poemPassRate)}</div>
+              </article>
+              <article class="card">
+                <div class="card-label">Line accuracy</div>
+                <div class="card-value">${percent(report.summary.lineAccuracy)}</div>
+              </article>
+              <article class="card">
+                <div class="card-label">Stable poems</div>
+                <div class="card-value">${report.summary.stablePoems}/${report.summary.corpusSize}</div>
+              </article>
+              <article class="card">
+                <div class="card-label">Rounds</div>
+                <div class="card-value">${report.rounds}</div>
+              </article>
+            </section>
+
+            ${renderTablePanel('Rounds', ['Round', 'Poem pass', 'Line accuracy'], report.roundSummaries.map((round) => [
+              round.round,
+              percent(round.poemPassRate),
+              percent(round.lineAccuracy)
+            ]))}
+
+            ${renderTablePanel('By poet', ['Poet', 'Poems', 'Poem pass', 'Line accuracy'], report.byPoet.map((item) => [
+              item.key,
+              item.poems,
+              percent(item.poemPassRate),
+              percent(item.lineAccuracy)
+            ]))}
+
+            ${renderTablePanel('By form', ['Form', 'Poems', 'Poem pass', 'Line accuracy'], report.byForm.map((item) => [
+              item.key,
+              item.poems,
+              percent(item.poemPassRate),
+              percent(item.lineAccuracy)
+            ]))}
+
+            ${renderTablePanel('By meter family', ['Family', 'Poems', 'Poem pass', 'Line accuracy'], report.byMeterFamily.map((item) => [
+              item.key,
+              item.poems,
+              percent(item.poemPassRate),
+              percent(item.lineAccuracy)
+            ]))}
+
+            ${renderTablePanel('By ambiguity type', ['Type', 'Poems', 'Poem pass', 'Line accuracy'], report.byAmbiguityType.map((item) => [
+              item.key,
+              item.poems,
+              percent(item.poemPassRate),
+              percent(item.lineAccuracy)
+            ]))}
+
+            ${renderTablePanel('Confidence calibration', ['Confidence band', 'Lines', 'Observed accuracy'], report.confidenceCalibration.map((item) => [
+              item.range,
+              item.count,
+              percent(item.accuracy)
+            ]))}
+
+            <section class="panel">
+              <h2>Corpus results</h2>
+              <div class="poem-list">
+                ${report.poems.map((poem) => `
+                  <article class="poem-card">
+                    <div>
+                      <div class="poem-title">${escapeHtml(poem.title)}</div>
+                      <div class="poem-meta">${escapeHtml(poem.author)} · ${escapeHtml(poem.profile)} · ${poem.pass ? '<span class="status-good">pass</span>' : '<span class="status-bad">fail</span>'}</div>
+                    </div>
+                    <div class="pill-row">
+                      ${poem.ambiguityTypes.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join('')}
+                    </div>
+                    <div class="muted">${escapeHtml(poem.sourceTruth)}</div>
+                    <div class="muted">Meter ${escapeHtml(poem.analysis.overallMeter)} · Form ${escapeHtml(poem.analysis.form || 'none')} · Rhyme ${escapeHtml(poem.analysis.rhymeScheme || poem.analysis.stanzaSchemePatterns.join(' / '))}</div>
+                  </article>
+                `).join('')}
+              </div>
+            </section>
+          `;
+        })
+        .catch((error) => {
+          app.innerHTML = `<section class="panel"><p class="status-bad">${escapeHtml(error.message || 'Failed to load benchmarks.')}</p></section>`;
+        });
+
+      function percent(value) {
+        return `${Math.round((Number(value) || 0) * 100)}%`;
+      }
+
+      function renderTablePanel(title, headers, rows) {
+        return `
+          <section class="panel">
+            <h2>${escapeHtml(title)}</h2>
+            <table>
+              <thead>
+                <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr>
+              </thead>
+              <tbody>
+                ${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(String(value))}</td>`).join('')}</tr>`).join('')}
+              </tbody>
+            </table>
+          </section>
+        `;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+    </script>
+  </body>
+</html>
