@@ -52,6 +52,9 @@
         --poem-leading: 1.62;
         --drawer-size: 18px;
         --drawer-leading: 1.58;
+        --confidence-bar-width: 82px;
+        --confidence-bar-width-small: 68px;
+        --confidence-bar-height: 2px;
         --mono-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       }
 
@@ -139,7 +142,8 @@
       .mini-link-bar {
         position: relative;
         overflow: hidden;
-        background: rgba(24, 22, 18, 0.08);
+        background: rgba(24, 22, 18, 0.06);
+        border-radius: 999px;
       }
 
       .tag-bar > span,
@@ -147,7 +151,7 @@
       .mini-link-bar > span {
         position: absolute;
         inset: 0 auto 0 0;
-        background: var(--fg);
+        background: rgba(24, 22, 18, 0.74);
       }
 
       .chip-button,
@@ -215,7 +219,7 @@
 
       .editor-grid {
         display: grid;
-        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        grid-template-columns: 56px minmax(0, 1fr) 28px minmax(168px, 208px);
         gap: 24px;
         align-items: start;
       }
@@ -308,7 +312,7 @@
 
       .line-row {
         display: grid;
-        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        grid-template-columns: 56px minmax(0, 1fr) 28px minmax(168px, 208px);
         gap: 24px;
         padding: 0;
         border-bottom: 0;
@@ -316,7 +320,7 @@
       }
 
       .line-row.blank {
-        grid-template-columns: 56px minmax(0, 1fr) minmax(220px, 260px);
+        grid-template-columns: 56px minmax(0, 1fr) 28px minmax(168px, 208px);
         gap: 24px;
         padding: 0;
         border-bottom: 0;
@@ -445,6 +449,14 @@
         min-height: calc(var(--poem-size) * var(--poem-leading));
       }
 
+      .line-rhyme {
+        min-height: calc(var(--poem-size) * var(--poem-leading));
+        display: flex;
+        align-items: flex-start;
+        justify-content: flex-end;
+        padding-top: 6px;
+      }
+
       .line-status {
         width: 100%;
         display: flex;
@@ -482,42 +494,38 @@
         background: transparent;
         text-align: left;
         display: grid;
-        gap: 8px;
+        gap: 6px;
+        justify-items: end;
       }
 
       .tag-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: flex-end;
-        gap: 12px;
+        display: block;
       }
 
       .line-tag:hover .tag-label {
         color: var(--accent);
       }
 
-      .line-tag:hover .rhyme-letter {
-        color: var(--accent);
-      }
-
       .rhyme-letter {
-        min-width: 1.25em;
+        width: 1.25em;
+        display: inline-block;
         color: var(--muted-strong);
         font-size: 15px;
         letter-spacing: 0.16em;
         text-transform: uppercase;
-        flex: 0 0 auto;
+        text-align: center;
       }
 
       .tag-label {
         font-size: 13px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
+        text-align: right;
       }
 
       .tag-bar {
-        width: 100%;
-        height: 4px;
+        width: var(--confidence-bar-width);
+        height: var(--confidence-bar-height);
       }
 
       .scheme-overall {
@@ -639,6 +647,10 @@
         line-height: 1.55;
       }
 
+      .drawer-subtitle:empty {
+        display: none;
+      }
+
       .drawer-body {
         overflow: auto;
         display: grid;
@@ -732,13 +744,13 @@
       }
 
       .candidate-metrics {
-        width: 112px;
-        padding-top: 4px;
+        width: var(--confidence-bar-width-small);
+        padding-top: 5px;
       }
 
       .candidate-bar {
         width: 100%;
-        height: 4px;
+        height: var(--confidence-bar-height);
       }
 
       .candidate-note {
@@ -771,8 +783,8 @@
       }
 
       .mini-link-bar {
-        width: 100%;
-        height: 4px;
+        width: var(--confidence-bar-width-small);
+        height: var(--confidence-bar-height);
       }
 
       .empty-panel {
@@ -796,13 +808,26 @@
           grid-template-columns: 44px minmax(0, 1fr);
         }
 
+        .line-rhyme {
+          grid-column: 2;
+          min-height: auto;
+          justify-content: flex-start;
+          padding-top: 0;
+        }
+
         .line-meta {
           grid-column: 2;
           justify-content: flex-start;
+          min-height: auto;
         }
 
         .line-tag {
           max-width: 280px;
+          justify-items: start;
+        }
+
+        .tag-label {
+          text-align: left;
         }
       }
 
@@ -1115,6 +1140,8 @@
               <div class="line-row blank" aria-hidden="true">
                 <div class="line-number"></div>
                 <div class="line-spacer"></div>
+                <div class="line-rhyme"></div>
+                <div class="line-spacer-meta"></div>
               </div>
             `;
           }
@@ -1136,6 +1163,7 @@
               <div class="line-content">
                 ${createAnnotatedLineMarkup(line.text, '')}
               </div>
+              <div class="line-rhyme"></div>
               <div class="line-meta">
                 <div class="line-status" aria-live="polite">
                   <span class="line-spinner" aria-hidden="true"></span>
@@ -1158,10 +1186,12 @@
             <div class="line-content">
               ${createAnnotatedLineMarkup(line.text, primary.displayGuide || '')}
             </div>
+            <div class="line-rhyme">
+              ${rhymeLetter}
+            </div>
             <div class="line-meta">
               <button class="line-tag" type="button" data-open-line="${line.index}">
                 <span class="tag-head">
-                  ${rhymeLetter}
                   <span class="tag-label">${escapeHtml(primary.meterLabel || line.tag || 'mixed meter')}</span>
                 </span>
                 <span class="tag-bar"><span style="width:${combined}%"></span></span>
@@ -1366,7 +1396,7 @@
 
         drawerKicker.textContent = 'Overview';
         drawerTitle.textContent = analysis.overallMeter || 'Scansion overview';
-        drawerSubtitle.textContent = 'One confidence bar combines local fit with stanza support. Longer bar means a stronger reading.';
+        drawerSubtitle.textContent = '';
 
         const summary = analysis.summaryPending
           ? 'Generating summary...'
@@ -1404,11 +1434,10 @@
           </section>
 
           <section class="panel">
-            <h3>Diagnostics</h3>
+            <h3>Structure</h3>
             <div class="mini-grid">
               <div class="mini-stat"><span>Stanzas</span><strong>${analysis.diagnostics?.stanzaCount || 0}</strong></div>
               <div class="mini-stat"><span>Counted lines</span><strong>${analysis.diagnostics?.lineCount || 0}</strong></div>
-              <div class="mini-stat"><span>Confidence</span><strong>Relative only</strong></div>
             </div>
           </section>
 
