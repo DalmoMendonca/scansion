@@ -8,7 +8,11 @@
     "start": "npx serve public -l 4173",
     "check": "node scripts/check-scan.mjs",
     "benchmarks": "node scripts/run-benchmarks.mjs --rounds=3",
-    "build:benchmarks": "node scripts/run-benchmarks.mjs --rounds=3 --write=public/benchmarks.json"
+    "build:benchmarks": "node scripts/run-benchmarks.mjs --rounds=3 --write=public/benchmarks.json",
+    "benchmarks:uva": "node scripts/run-uva-benchmarks.mjs",
+    "audit:uva": "node scripts/audit-uva-scansion.mjs --rounds=2",
+    "uva:export": "node scripts/export-uva-rubric.mjs",
+    "build:dashboard": "node scripts/build-dashboard-report.mjs"
   },
   "dependencies": {
     "@netlify/functions": "^5.1.2",

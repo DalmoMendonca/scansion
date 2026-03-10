@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import handler, { API_VERSION, scanPoem } from '../netlify/functions/scan.js';
 import { BENCHMARK_CORPUS } from '../benchmarks/corpus.mjs';
+import { extractPoemPage, normalizeStressPattern } from './lib/uva-prosody.mjs';
 import {
   buildPrintableDocument,
   createProjectRecord,
@@ -22,9 +23,11 @@ await testOverrideRequest();
 testProfileAwareBenchmarks();
 testRhymeClassificationFixtures();
 testFeminineEndingSignal();
+testNativeRegressionFixtures();
 testShareAndProjectState();
 testPrintableDocument();
 testWidgetMarkup();
+testUvaParserFixture();
 await testFrontendFiles();
 
 console.log(`check ok: api ${API_VERSION}`);
@@ -276,6 +279,61 @@ That saved a wretch like me!`,
   }
 }
 
+function testNativeRegressionFixtures() {
+  const analysis = scanPoem({
+    poem: `The gray sea and the long black land;
+And the yellow half-moon large and low;
+And the startled little waves that leap
+In fiery ringlets from their sleep,
+As I gain the cove with pushing prow,
+And quench its speed i' the slushy sand.
+
+Then a mile of warm sea-scented beach;
+Three fields to cross till a farm appears;
+A tap at the pane, the quick sharp scratch
+And blue spurt of a lighted match,
+And a voice less loud, thro' its joys and fears,
+Than the two hearts beating each to each!`,
+    profileKey: 'modern'
+  });
+
+  const line = analysis.lines.filter((entry) => !entry.blank)[1];
+  if (line?.scans?.[0]?.meterKey !== 'iambic_tetrameter') {
+    throw new Error(`Meeting at Night line 2 should scan as iambic_tetrameter natively, got ${line?.scans?.[0]?.meterKey || 'missing'}.`);
+  }
+
+  if (normalizeStressPattern(line?.scans?.[0]?.stressPattern || '') !== 'usususus') {
+    throw new Error(`Meeting at Night line 2 should keep the native canonical stress, got ${line?.scans?.[0]?.stressPattern || 'missing'}.`);
+  }
+
+  const spenser = scanPoem({
+    poem: `One day I wrote her name upon the strand,
+But came the waves and washed it away:
+Agayne I wrote it with a second hand,
+But came the tyde, and made my paynes his pray.
+"Vayne man," sayd she, "that doest in vaine assay,
+A mortall thing so to immortalize;
+For I my selve shall lyke to this decay,
+And eek my name bee wyped out lykewize."
+"Not so," (quod I) "let baser things devize
+To dy in dust, but you shall live by fame:
+My verse your vertues rare shall eternize,
+And in the heavens wryte your glorious name:
+Where whenas death shall all the world subdew,
+Our love shall live, and later life renew."`,
+    profileKey: 'early_modern'
+  });
+
+  const spenserLine = spenser.lines.filter((entry) => !entry.blank)[1];
+  if (spenserLine?.scans?.[0]?.meterKey !== 'iambic_pentameter') {
+    throw new Error(`Amoretti 75 line 2 should scan as iambic_pentameter natively, got ${spenserLine?.scans?.[0]?.meterKey || 'missing'}.`);
+  }
+
+  if (normalizeStressPattern(spenserLine?.scans?.[0]?.stressPattern || '') !== 'ususususus') {
+    throw new Error(`Amoretti 75 line 2 should keep the native canonical stress, got ${spenserLine?.scans?.[0]?.stressPattern || 'missing'}.`);
+  }
+}
+
 function testPrintableDocument() {
   const analysis = scanPoem({
     poem: `Amazing grace! How sweet the sound
@@ -319,10 +377,46 @@ Was blind, but now I see.`,
   }
 }
 
+function testUvaParserFixture() {
+  const html = `
+    <div id="poemtitle"><h2>Fixture Poem</h2><h4>Fixture Author</h4></div>
+    <div class="TEI-l" id="prosody-real-5" data-n="5" data-part="N" data-met="-+-+-+-+" data-real="++---+++|-+-+-+++|++-+-+++" data-feet="No mo|tion has |she now, |no force;"><span style="display:none;" linegroupindex="1" answer="-+(4/3/4/3)">Meter</span><span class="prosody-syllable" real="" id="prosody-real-5-1-1-1" onclick="switchfoot('prosody-real-5-1-1-1');" discrepant="" data-stress="+">No </span><span class="prosody-syllable" real="" id="prosody-real-5-1-1-2" onclick="switchfoot('prosody-real-5-1-1-2');" discrepant="" data-stress="+">mo<span class="prosody-footmarker">|</span></span><span class="prosody-syllable" real="" id="prosody-real-5-2-1-1" onclick="switchfoot('prosody-real-5-2-1-1');" discrepant="" data-stress="&#x222A;">tion </span><span class="prosody-syllable" real="" id="prosody-real-5-2-1-2" onclick="switchfoot('prosody-real-5-2-1-2');" discrepant="" data-stress="&#x222A;">has <span class="prosody-footmarker">|</span></span><span class="prosody-syllable" real="" id="prosody-real-5-3-1-1" onclick="switchfoot('prosody-real-5-3-1-1');" data-stress="&#x222A;">she </span><span class="prosody-syllable" real="" id="prosody-real-5-3-1-2" onclick="switchfoot('prosody-real-5-3-1-2');" data-stress="+">now, <span class="prosody-footmarker">|</span></span><span class="caesura" style="display:none">//</span><span class="prosody-syllable" real="" id="prosody-real-5-4-1-1" onclick="switchfoot('prosody-real-5-4-1-1');" discrepant="" data-stress="+">no </span><span class="prosody-syllable" real="" id="prosody-real-5-4-2-1" onclick="switchfoot('prosody-real-5-4-2-1');" discrepant="" data-stress="+">force;</span></div><div class="buttons"><p class="prosody-note" id="hintfor5"><span>Note on line 5:</span> Fixture note.</p></div>
+  `;
+
+  const poem = extractPoemPage(html, 'https://prosody.lib.virginia.edu/prosody_poem/fixture/');
+  const line = poem.lines[0];
+
+  if (line.canonicalStressPattern !== 'ssuuusss' || line.canonicalStressSource !== 'data-real') {
+    throw new Error(`UVA parser should treat the first data-real reading as canonical, got ${line.canonicalStressPattern || 'missing'} from ${line.canonicalStressSource || 'missing'}.`);
+  }
+
+  if (
+    line.studentStressPatterns.length !== 3 ||
+    !line.acceptedStressPatterns.includes('ssuuusss') ||
+    !line.acceptedStressPatterns.includes('usususss') ||
+    !line.acceptedStressPatterns.includes('ssususss')
+  ) {
+    throw new Error('UVA parser should preserve all data-real readings as accepted line-level scansions.');
+  }
+
+  if (line.templateStressPattern !== 'usususus' || line.templateStressSource !== 'data-met') {
+    throw new Error(`UVA parser should preserve the regularized data-met template separately, got ${line.templateStressPattern || 'missing'} from ${line.templateStressSource || 'missing'}.`);
+  }
+
+  if (line.meterKey !== 'iambic_tetrameter') {
+    throw new Error(`UVA parser should derive line meter from the answer payload, got ${line.meterKey || 'missing'}.`);
+  }
+
+  if (line.syllables.length !== 8 || !line.syllables[1].footBoundaryAfter || !line.syllables[5].caesuraAfter) {
+    throw new Error('UVA parser should capture syllable structure, foot boundaries, and caesura positions.');
+  }
+}
+
 async function testFrontendFiles() {
   const appJs = await fs.readFile(path.join(repoRoot, 'public', 'app.js'), 'utf8');
   const apiHtml = await fs.readFile(path.join(repoRoot, 'public', 'api.html'), 'utf8');
   const benchmarksHtml = await fs.readFile(path.join(repoRoot, 'public', 'benchmarks.html'), 'utf8');
+  const dashboardHtml = await fs.readFile(path.join(repoRoot, 'public', 'dashboard', 'index.html'), 'utf8');
   const indexHtml = await fs.readFile(path.join(repoRoot, 'public', 'index.html'), 'utf8');
 
   if (!appJs.includes('applyProjectState') || !appJs.includes('renderRhymeDrawer')) {
@@ -339,6 +433,10 @@ async function testFrontendFiles() {
 
   if (!benchmarksHtml.includes('Benchmark dashboard') || !benchmarksHtml.includes('/benchmarks.json')) {
     throw new Error('Benchmark dashboard page is missing expected wiring.');
+  }
+
+  if (!dashboardHtml.includes('/dashboard/report.json') || !dashboardHtml.includes('Canonical scansion versus the live engine')) {
+    throw new Error('Dashboard page is missing the UVA comparison wiring.');
   }
 
   if (!indexHtml.includes('/app.js') || !indexHtml.includes('profileSelect')) {
