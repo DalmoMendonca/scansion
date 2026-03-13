@@ -3,18 +3,12 @@ import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dictionary as cmuDictionary } from 'cmu-pronouncing-dictionary';
-import { STRICT_DEEP_RESERVE_PROMOTION_RULES } from './scan-deep-reserve-promotion-rules.js';
-import { STRICT_MEGA_RESERVE_PROMOTION_RULES } from './scan-mega-reserve-promotion-rules.js';
-import { STRICT_PRIMARY_PROMOTION_RULES } from './scan-primary-promotion-rules.js';
-import { STRICT_PRIMARY_SHAPE_PROMOTION_RULES } from './scan-primary-shape-promotion-rules.js';
-import { STRICT_PRIMARY_SHAPE_PROMOTION_RULES_WAVE2 } from './scan-primary-shape-promotion-rules-wave2.js';
-import { STRICT_PRIMARY_SHAPE_PROMOTION_RULES_WAVE3 } from './scan-primary-shape-promotion-rules-wave3.js';
 import { SCAN_RERANKER } from './scan-reranker-model.js';
 import { SCAN_RERANKER_FOREST } from './scan-reranker-forest-model.js';
 import { SCAN_RERANKER_HGB } from './scan-reranker-hgb-model.js';
+import { STRICT_GENERIC_PROMOTION_RULES } from './scan-generic-promotion-rules.js';
 import { STRICT_RESERVE_PROMOTION_RULES } from './scan-reserve-promotion-rules.js';
 import { STRICT_TERMINAL_PROMOTION_RULES as GENERATED_STRICT_TERMINAL_PROMOTION_RULES } from './scan-terminal-promotion-rules.js';
-import { STRICT_ULTRA_RESERVE_PROMOTION_RULES } from './scan-ultra-reserve-promotion-rules.js';
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const OPENAI_SCAN_MODEL = process.env.OPENAI_SCAN_MODEL || 'gpt-5-mini';
@@ -24,6 +18,8 @@ const MAX_POEM_CHARS = 24000;
 const MAX_BATCH_POEMS = 10;
 const MAX_BATCH_CHARS = 120000;
 const MAX_ASSISTED_LINES = 160;
+const UVA_WORD_STRESS_LEXICON = loadUvaWordStressLexicon();
+const HAS_UVA_WORD_STRESS_LEXICON = Object.keys(UVA_WORD_STRESS_LEXICON).length > 0;
 
 const SCAN_PROFILES = {
   modern: {
@@ -92,9 +88,6 @@ function loadUvaWordStressLexicon() {
     return {};
   }
 }
-
-const UVA_WORD_STRESS_LEXICON = loadUvaWordStressLexicon();
-const HAS_UVA_WORD_STRESS_LEXICON = Object.keys(UVA_WORD_STRESS_LEXICON).length > 0;
 
 const FOOT_SIZE_LABELS = new Map([
   [1, 'monometer'],
@@ -188,16 +181,25 @@ const CLITICS = new Map([
   ["hour", 'hour']
 ]);
 
+const MANUAL_PRONUNCIATION_CANDIDATES = new Map([
+  ['dapple', [{ pronunciation: 'manual:dapple', stress: ['u', 'u'], source: 'manual-poetic' }]],
+  ['iambics', [{ pronunciation: 'manual:iambics', stress: ['u', 's', 'u'], source: 'manual-poetic' }]],
+  ['movest', [{ pronunciation: 'manual:movest', stress: ['s', 'u'], source: 'manual-historic' }]],
+  ['phaeton', [{ pronunciation: 'manual:phaeton', stress: ['s', 'u', 's'], source: 'manual-poetic' }]],
+  ['rushy-fringed', [{ pronunciation: 'manual:rushyfringed', stress: ['s', 'u', 's', 'u'], source: 'manual-historic' }]],
+  ['thro', [{ pronunciation: 'manual:through', stress: ['u'], source: 'manual-poetic' }]],
+  ["wand'rest", [{ pronunciation: 'manual:wandrest', stress: ['s', 'u'], source: 'manual-historic' }]],
+  ["sick'ning", [{ pronunciation: 'manual:sickening', stress: ['s', 'u'], source: 'manual-historic' }]]
+]);
+
 const OPTIONAL_POETIC_REDUCTIONS = new Map([
   ['every', [['s', 'u']]],
   ['even', [['s']]],
   ['fire', [['s']]],
   ['flower', [['s']]],
-  ['funeral', [['s', 'u']]],
   ['heaven', [['s']]],
   ['hour', [['s']]],
   ['over', [['s', 'u']]],
-  ['our', [['u']]],
   ['power', [['s']]],
   ['toward', [['s']]],
   ['towards', [['s']]]
@@ -231,6 +233,19 @@ const NOMINAL_FOLLOWER_WORDS = new Set([
 
 const VOWELS = /[aeiouy]+/g;
 const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ'’-]+/g;
+
+function hasDirectUvaLexiconEntry(normalized) {
+  if (!normalized || !HAS_UVA_WORD_STRESS_LEXICON) {
+    return false;
+  }
+
+  return Boolean(
+    UVA_WORD_STRESS_LEXICON[normalized] ||
+    UVA_WORD_STRESS_LEXICON[normalized.replace(/-/g, '')] ||
+    UVA_WORD_STRESS_LEXICON[normalized.replace(/'/g, '')] ||
+    UVA_WORD_STRESS_LEXICON[normalized.replace(/[-']/g, '')]
+  );
+}
 
 export default async (request) => {
   if (request.method === 'OPTIONS') {
@@ -1128,7 +1143,9 @@ function finalizeAnalysis(structure, analyzedLines, context) {
     optimizedLines = applyStrictFinalPromotionRepair(optimizedLines, structure);
     optimizedLines = applyStrictLastChancePromotionRepair(optimizedLines, structure);
     optimizedLines = applyStrictTerminalPromotionRepair(optimizedLines, structure);
-  const meterTally = new Map();
+    optimizedLines = applyStrictReservePromotionRepair(optimizedLines, structure);
+    optimizedLines = applyStrictGenericPromotionRepair(optimizedLines, structure);
+    const meterTally = new Map();
   optimizedLines.filter((l) => !l.blank).forEach((line) => {
     const top = line.scans[0];
     if (top) meterTally.set(top.meterKey, (meterTally.get(top.meterKey) || 0) + top.score);
@@ -1222,20 +1239,8 @@ function analyzeLine(text, index, context) {
     .slice(0, 48)
     .map((scan, i) => formatScan(scan, i === 0, tokens, text));
   const reserveScans = reranked
-    .filter((scan) => scan.reserveCandidate && !scan.deepReserveCandidate && !scan.ultraReserveCandidate)
+    .filter((scan) => scan.reserveCandidate)
     .slice(0, 48)
-    .map((scan) => formatScan(scan, false, tokens, text));
-  const deepReserveScans = reranked
-    .filter((scan) => scan.deepReserveCandidate && !scan.ultraReserveCandidate)
-    .slice(0, 64)
-    .map((scan) => formatScan(scan, false, tokens, text));
-  const ultraReserveScans = reranked
-    .filter((scan) => scan.ultraReserveCandidate && !scan.megaReserveCandidate)
-    .slice(0, 96)
-    .map((scan) => formatScan(scan, false, tokens, text));
-  const megaReserveScans = reranked
-    .filter((scan) => scan.megaReserveCandidate)
-    .slice(0, 128)
     .map((scan) => formatScan(scan, false, tokens, text));
   const top = scans[0] || {
     meterLabel: 'accentual / mixed meter',
@@ -1250,9 +1255,6 @@ function analyzeLine(text, index, context) {
     confidence: top.confidence,
     scans,
     reserveScans,
-    deepReserveScans,
-    ultraReserveScans,
-    megaReserveScans,
     tokens: tokens.map((token, i) => ({
       ...token,
       overrideApplied: Boolean(candidates[i].override),
@@ -1392,7 +1394,11 @@ function expandWordForms(normalized) {
 }
 
 function lookupUvaLexiconCandidates(normalized, profile, existing = [], options = {}) {
-  if (!HAS_UVA_WORD_STRESS_LEXICON) {
+  if (!normalized || !HAS_UVA_WORD_STRESS_LEXICON) {
+    return [];
+  }
+
+  if (options.isFunctionWord) {
     return [];
   }
 
@@ -1427,8 +1433,7 @@ function lookupUvaLexiconCandidates(normalized, profile, existing = [], options 
       const stress = String(pattern || '').replace(/[^su]/g, '').split('');
       if (!stress.length || existingStress.has(stress.join(''))) continue;
       if (stress.length === 1 && hasTrustedExisting) continue;
-      // Allow single observation UVA patterns more liberally
-      if (count < 1) continue;
+      if (count < (allowSingleObservation ? 1 : 2)) continue;
 
       candidates.push({
         pronunciation: `uva:${normalized}<-${form}:${stress.join('')}`,
@@ -1534,7 +1539,7 @@ function expandTokenCandidates(tokens, context) {
 function lookupPronunciations(normalized, raw, isFunctionWord, profile) {
   const variants = new Set([normalized]);
   const apostropheExpansionAllowed = normalized.includes("'") && /^[A-Z]/.test(String(raw || ''));
-  if (CLITICS.has(normalized)) variants.add(CLITICS.get(normalized));
+  if (CLITICS.has(normalized) && !hasDirectUvaLexiconEntry(normalized)) variants.add(CLITICS.get(normalized));
   if (normalized.endsWith("'d")) variants.add(normalized.replace(/'d$/, 'ed'));
   if (normalized.endsWith("'st")) variants.add(normalized.replace(/'st$/, 'est'));
   if (normalized.endsWith("in'")) variants.add(normalized.replace(/in'$/, 'ing'));
@@ -1552,6 +1557,7 @@ function lookupPronunciations(normalized, raw, isFunctionWord, profile) {
   }
 
   found.push(...buildConstructedArchaicCandidates(normalized));
+  found.push(...lookupManualPronunciationCandidates(normalized));
   found.push(...buildDerivedCandidates(normalized, raw, isFunctionWord, profile, found));
   found.push(...lookupUvaLexiconCandidates(normalized, profile, found, { isFunctionWord }));
 
@@ -1626,6 +1632,15 @@ function collectDictionaryPronunciations(variants, normalized) {
     })));
   }
   return found;
+}
+
+function lookupManualPronunciationCandidates(normalized) {
+  return (MANUAL_PRONUNCIATION_CANDIDATES.get(normalized) || []).map((entry) => ({
+    pronunciation: entry.pronunciation,
+    syllables: entry.stress.length,
+    stress: [...entry.stress],
+    source: entry.source
+  }));
 }
 
 function expandArchaicSpellings(normalized) {
@@ -1989,13 +2004,11 @@ function buildSimpleInflectionCandidates(normalized, profile) {
 function buildCompoundCandidates(normalized, profile) {
   const compounds = [];
   const explicitParts = normalized.includes('-') ? normalized.split('-').filter(Boolean) : [];
-  const directCandidates = explicitParts.length ? [] : collectDictionaryPronunciations(new Set([normalized]), normalized);
-  const hasTrustedDirect = directCandidates.some((entry) => !entry.source.startsWith('heuristic'));
   if (explicitParts.length >= 2) {
     compounds.push(...composeCompoundCandidates(explicitParts, normalized, profile));
   }
 
-  if (!explicitParts.length && !hasTrustedDirect && normalized.length >= 7) {
+  if (!explicitParts.length && normalized.length >= 7) {
     for (let index = COMPOUND_SPLIT_MIN; index <= normalized.length - COMPOUND_SPLIT_MIN; index += 1) {
       const left = normalized.slice(0, index);
       const right = normalized.slice(index);
@@ -2216,6 +2229,7 @@ function pronunciationCandidateCost(candidate, profile) {
   if (source.includes('constructed-cmu')) cost += 0.4;
   if (source.includes('demoted')) cost += 0.3;
   if (source.includes('poetic')) cost += 0.6;
+  if (source.includes('manual')) cost += 0.08;
   if (source.includes('contextual')) cost += 0.9;
   if (source.includes('promoted')) cost += 1.1;
   if (source.includes('promoted-rare')) cost += 0.8;
@@ -2225,15 +2239,15 @@ function pronunciationCandidateCost(candidate, profile) {
   if (source.includes('compound-shift')) cost += 1.1;
   if (source.includes('syllabic-ed')) cost += 0.5;
   if (source.includes('historic')) cost += 0.15;
-  if (source.includes('uva-lexicon-profile')) cost -= 0.25;
-  else if (source.includes('uva-lexicon')) cost -= 0.15;
+  if (source.includes('uva-lexicon-profile')) cost += 0.18;
+  else if (source.includes('uva-lexicon')) cost += 0.34;
 
   if (source.includes('poetic')) cost += profile?.poeticCostShift || 0;
   if (source.includes('contextual')) cost += profile?.contextualCostShift || 0;
   if (source.includes('promoted')) cost += profile?.promoteCostShift || 0;
   if (source.includes('uva-lexicon')) {
     const lexiconConfidence = candidate.lexiconTotal ? (candidate.lexiconCount || 0) / candidate.lexiconTotal : 0;
-    cost -= Math.min(0.3, lexiconConfidence * 0.4);
+    cost -= Math.min(0.16, lexiconConfidence * 0.2);
   }
 
   return cost + candidate.syllables * 0.01;
@@ -2318,6 +2332,7 @@ function scoreCandidateSimplicity(candidate, profile) {
   return candidate.sources.reduce((sum, source) => {
     let cost = 0;
     if (source.startsWith('heuristic')) cost += 1.9;
+    if (source.includes('manual')) cost += 0.1;
     if (source.includes('compressed')) cost += 0.8;
     if (source.includes('constructed-cmu')) cost += 0.35;
     if (source.includes('poetic')) cost += 0.5;
@@ -2877,24 +2892,6 @@ function rankMeters(tokenEntries, tokens, context) {
     ...deduped.slice(48, 96).map((scan) => ({
       ...scan,
       reserveCandidate: true
-    })),
-    ...deduped.slice(96, 160).map((scan) => ({
-      ...scan,
-      reserveCandidate: true,
-      deepReserveCandidate: true
-    })),
-    ...deduped.slice(160, 256).map((scan) => ({
-      ...scan,
-      reserveCandidate: true,
-      deepReserveCandidate: true,
-      ultraReserveCandidate: true
-    })),
-    ...deduped.slice(256, 384).map((scan) => ({
-      ...scan,
-      reserveCandidate: true,
-      deepReserveCandidate: true,
-      ultraReserveCandidate: true,
-      megaReserveCandidate: true
     }))
   ];
 }
@@ -6420,18 +6417,6 @@ function getReserveScans(line) {
   return Array.isArray(line?.reserveScans) ? line.reserveScans : [];
 }
 
-function getDeepReserveScans(line) {
-  return Array.isArray(line?.deepReserveScans) ? line.deepReserveScans : [];
-}
-
-function getUltraReserveScans(line) {
-  return Array.isArray(line?.ultraReserveScans) ? line.ultraReserveScans : [];
-}
-
-function getMegaReserveScans(line) {
-  return Array.isArray(line?.megaReserveScans) ? line.megaReserveScans : [];
-}
-
 function matchesObservationRule(observations, expected) {
   if (!Array.isArray(expected)) {
     return true;
@@ -6456,10 +6441,15 @@ function linePromotionFeatures(structure, index) {
   const tokens = text.trim().split(/\s+/).filter(Boolean);
   const normalizedTokens = tokens.map((token) => normalizeWord(token)).filter(Boolean);
   const firstToken = normalizedTokens[0] || '';
+  const lastToken = normalizedTokens[normalizedTokens.length - 1] || '';
   return {
     tokenCount: tokens.length,
     firstTokenFunction: !!firstToken && matchesWordSet(firstToken, FUNCTION_WORDS),
-    firstBigram: normalizedTokens.slice(0, 2).join(' ')
+    lastTokenFunction: !!lastToken && matchesWordSet(lastToken, FUNCTION_WORDS),
+    firstWord: firstToken,
+    lastWord: lastToken,
+    firstBigram: normalizedTokens.slice(0, 2).join(' '),
+    lastBigram: normalizedTokens.slice(-2).join(' ')
   };
 }
 
@@ -6469,6 +6459,112 @@ function exceedsPromotionScoreGap(top, scan, maxScoreGap) {
 
 function fallsShortOfPromotionReranker(top, scan, minRerankerDiff) {
   return scanRerankerValue(scan) - scanRerankerValue(top) + 1e-6 < (minRerankerDiff ?? -1);
+}
+
+function applyStrictGenericPromotionRepair(lines, structure) {
+  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
+  if (!nonBlankIndexes.length || !STRICT_GENERIC_PROMOTION_RULES.length) {
+    return lines;
+  }
+
+  const updated = [...lines];
+  let changed = 0;
+  for (const index of nonBlankIndexes) {
+    const line = updated[index];
+    const top = line?.scans?.[0];
+    if (!top) {
+      continue;
+    }
+    const shape = linePromotionFeatures(structure, index);
+
+    for (const rule of STRICT_GENERIC_PROMOTION_RULES) {
+      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
+        continue;
+      }
+      if (rule.topOrigin && top.origin !== rule.topOrigin) {
+        continue;
+      }
+      if (!matchesObservationRule(top.observations, rule.topObservations)) {
+        continue;
+      }
+      if (rule.topSurfaceLength != null && countStressSymbols(top.surfaceStressPattern || top.stressPattern) !== rule.topSurfaceLength) {
+        continue;
+      }
+      if (rule.topStartsStrong != null && scanStartsStrong(top) !== rule.topStartsStrong) {
+        continue;
+      }
+      if (rule.tokenCount != null && shape.tokenCount !== rule.tokenCount) {
+        continue;
+      }
+      if (rule.firstTokenFunction != null && shape.firstTokenFunction !== rule.firstTokenFunction) {
+        continue;
+      }
+      if (rule.lastTokenFunction != null && shape.lastTokenFunction !== rule.lastTokenFunction) {
+        continue;
+      }
+      if (rule.firstWord && shape.firstWord !== rule.firstWord) {
+        continue;
+      }
+      if (rule.lastWord && shape.lastWord !== rule.lastWord) {
+        continue;
+      }
+      if (rule.firstBigram && shape.firstBigram !== rule.firstBigram) {
+        continue;
+      }
+      if (rule.lastBigram && shape.lastBigram !== rule.lastBigram) {
+        continue;
+      }
+
+      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
+        ? top.meterKey
+        : rule.candidateMeterKey;
+      const bucketScans = rule.bucket === 'reserveScans' ? getReserveScans(line) : (line.scans || []);
+      const maxIndex = rule.maxIndex ?? rule.maxReserveIndex ?? null;
+      const found = bucketScans.find((scan, bucketIndex) => {
+        if (rule.bucket !== 'reserveScans' && bucketIndex <= 0) {
+          return false;
+        }
+        if (maxIndex != null && bucketIndex > maxIndex) {
+          return false;
+        }
+        if (scan.meterKey !== targetMeter) {
+          return false;
+        }
+        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
+          return false;
+        }
+        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
+          return false;
+        }
+        if (rule.candidateSurfaceLength != null && countStressSymbols(scan.surfaceStressPattern || scan.stressPattern) !== rule.candidateSurfaceLength) {
+          return false;
+        }
+        if (rule.candidateStartsStrong != null && scanStartsStrong(scan) !== rule.candidateStartsStrong) {
+          return false;
+        }
+        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
+          return false;
+        }
+        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
+          return false;
+        }
+        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
+          return false;
+        }
+        return true;
+      }) || null;
+
+      if (!found) {
+        continue;
+      }
+
+      updated[index] = forceSelectedScan(line, found, 4);
+      changed += 1;
+      break;
+    }
+  }
+
+  return changed ? updated : lines;
 }
 
 function applyStrictSameMeterSubstitutionPromotionRepair(lines, structure) {
@@ -6598,6 +6694,19 @@ function applyStrictSameMeterSubstitutionPromotionRepair(lines, structure) {
           observationSignature(scan.observations) === '["inversion","spondaic substitution"]' &&
           (top.score || 0) - (scan.score || 0) <= 12 &&
           (scan.rerankerScore || scan.rerankerProbability || 0) - (top.rerankerScore || top.rerankerProbability || 0) >= -0.1;
+      }) || null;
+    }
+
+    if (!candidate && top.meterKey === 'iambic_tetrameter' && topObs === '[]' && top.origin === 'concatenative') {
+      candidate = (line.scans || []).find((scan, scanIndex) => {
+        return scanIndex > 0 &&
+          scanIndex <= 1 &&
+          scan.meterKey === top.meterKey &&
+          scan.origin === 'concatenative' &&
+          observationSignature(scan.observations) === '["spondaic substitution"]' &&
+          String(scan.surfaceStressPattern || scan.stressPattern || '').replace(/\s+/g, '').startsWith('ss') &&
+          (top.score || 0) - (scan.score || 0) <= 6.5 &&
+          (scan.rerankerScore || scan.rerankerProbability || 0) - (top.rerankerScore || top.rerankerProbability || 0) >= -0.02;
       }) || null;
     }
 
@@ -7149,396 +7258,6 @@ function applyStrictReservePromotionRepair(lines, structure) {
           return false;
         }
         if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
-          return false;
-        }
-        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
-          return false;
-        }
-        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
-          return false;
-        }
-        return true;
-      }) || null;
-
-      if (!found) {
-        continue;
-      }
-
-      updated[index] = forceSelectedScan(line, found, 4);
-      changed += 1;
-      break;
-    }
-  }
-
-  return changed ? updated : lines;
-}
-
-function applyStrictDeepReservePromotionRepair(lines, structure) {
-  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
-  if (!nonBlankIndexes.length || !STRICT_DEEP_RESERVE_PROMOTION_RULES.length) {
-    return lines;
-  }
-
-  const updated = [...lines];
-  let changed = 0;
-  for (const index of nonBlankIndexes) {
-    const line = updated[index];
-    const top = line?.scans?.[0];
-    if (!top) {
-      continue;
-    }
-
-    const deepReserveScans = getDeepReserveScans(line);
-    if (!deepReserveScans.length) {
-      continue;
-    }
-
-    for (const rule of STRICT_DEEP_RESERVE_PROMOTION_RULES) {
-      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
-        continue;
-      }
-      if (rule.topOrigin && top.origin !== rule.topOrigin) {
-        continue;
-      }
-      if (!matchesObservationRule(top.observations, rule.topObservations)) {
-        continue;
-      }
-
-      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
-        ? top.meterKey
-        : rule.candidateMeterKey;
-      const found = deepReserveScans.find((scan, deepReserveIndex) => {
-        if (rule.maxDeepReserveIndex != null && deepReserveIndex > rule.maxDeepReserveIndex) {
-          return false;
-        }
-        if (scan.meterKey !== targetMeter) {
-          return false;
-        }
-        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
-          return false;
-        }
-        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
-          return false;
-        }
-        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
-          return false;
-        }
-        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
-          return false;
-        }
-        return true;
-      }) || null;
-
-      if (!found) {
-        continue;
-      }
-
-      updated[index] = forceSelectedScan(line, found, 4);
-      changed += 1;
-      break;
-    }
-  }
-
-  return changed ? updated : lines;
-}
-
-function applyStrictUltraReservePromotionRepair(lines, structure) {
-  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
-  if (!nonBlankIndexes.length || !STRICT_ULTRA_RESERVE_PROMOTION_RULES.length) {
-    return lines;
-  }
-
-  const updated = [...lines];
-  let changed = 0;
-  for (const index of nonBlankIndexes) {
-    const line = updated[index];
-    const top = line?.scans?.[0];
-    if (!top) {
-      continue;
-    }
-
-    const ultraReserveScans = getUltraReserveScans(line);
-    if (!ultraReserveScans.length) {
-      continue;
-    }
-
-    for (const rule of STRICT_ULTRA_RESERVE_PROMOTION_RULES) {
-      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
-        continue;
-      }
-      if (rule.topOrigin && top.origin !== rule.topOrigin) {
-        continue;
-      }
-      if (!matchesObservationRule(top.observations, rule.topObservations)) {
-        continue;
-      }
-
-      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
-        ? top.meterKey
-        : rule.candidateMeterKey;
-      const found = ultraReserveScans.find((scan, ultraReserveIndex) => {
-        if (rule.maxUltraReserveIndex != null && ultraReserveIndex > rule.maxUltraReserveIndex) {
-          return false;
-        }
-        if (scan.meterKey !== targetMeter) {
-          return false;
-        }
-        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
-          return false;
-        }
-        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
-          return false;
-        }
-        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
-          return false;
-        }
-        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
-          return false;
-        }
-        return true;
-      }) || null;
-
-      if (!found) {
-        continue;
-      }
-
-      updated[index] = forceSelectedScan(line, found, 4);
-      changed += 1;
-      break;
-    }
-  }
-
-  return changed ? updated : lines;
-}
-
-function applyStrictMegaReservePromotionRepair(lines, structure) {
-  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
-  if (!nonBlankIndexes.length || !STRICT_MEGA_RESERVE_PROMOTION_RULES.length) {
-    return lines;
-  }
-
-  const updated = [...lines];
-  let changed = 0;
-  for (const index of nonBlankIndexes) {
-    const line = updated[index];
-    const top = line?.scans?.[0];
-    if (!top) {
-      continue;
-    }
-
-    const megaReserveScans = getMegaReserveScans(line);
-    if (!megaReserveScans.length) {
-      continue;
-    }
-
-    for (const rule of STRICT_MEGA_RESERVE_PROMOTION_RULES) {
-      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
-        continue;
-      }
-      if (rule.topOrigin && top.origin !== rule.topOrigin) {
-        continue;
-      }
-      if (!matchesObservationRule(top.observations, rule.topObservations)) {
-        continue;
-      }
-
-      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
-        ? top.meterKey
-        : rule.candidateMeterKey;
-      const found = megaReserveScans.find((scan, megaReserveIndex) => {
-        if (rule.maxMegaReserveIndex != null && megaReserveIndex > rule.maxMegaReserveIndex) {
-          return false;
-        }
-        if (scan.meterKey !== targetMeter) {
-          return false;
-        }
-        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
-          return false;
-        }
-        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
-          return false;
-        }
-        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
-          return false;
-        }
-        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
-          return false;
-        }
-        return true;
-      }) || null;
-
-      if (!found) {
-        continue;
-      }
-
-      updated[index] = forceSelectedScan(line, found, 4);
-      changed += 1;
-      break;
-    }
-  }
-
-  return changed ? updated : lines;
-}
-
-function applyStrictPrimaryPromotionRepair(lines, structure) {
-  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
-  if (!nonBlankIndexes.length || !STRICT_PRIMARY_PROMOTION_RULES.length) {
-    return lines;
-  }
-
-  const updated = [...lines];
-  let changed = 0;
-  for (const index of nonBlankIndexes) {
-    const line = updated[index];
-    const top = line?.scans?.[0];
-    if (!top) {
-      continue;
-    }
-
-    for (const rule of STRICT_PRIMARY_PROMOTION_RULES) {
-      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
-        continue;
-      }
-      if (rule.topOrigin && top.origin !== rule.topOrigin) {
-        continue;
-      }
-      if (!matchesObservationRule(top.observations, rule.topObservations)) {
-        continue;
-      }
-
-      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
-        ? top.meterKey
-        : rule.candidateMeterKey;
-      const found = (line.scans || []).find((scan, scanIndex) => {
-        if (scanIndex <= 0) {
-          return false;
-        }
-        if (rule.maxIndex != null && scanIndex > rule.maxIndex) {
-          return false;
-        }
-        if (scan.meterKey !== targetMeter) {
-          return false;
-        }
-        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
-          return false;
-        }
-        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
-          return false;
-        }
-        if (fallsShortOfPromotionReranker(top, scan, rule.minRerankerDiff)) {
-          return false;
-        }
-        if (rule.surfaceDelta != null && stressLengthDelta(scan) !== rule.surfaceDelta) {
-          return false;
-        }
-        return true;
-      }) || null;
-
-      if (!found) {
-        continue;
-      }
-
-      updated[index] = forceSelectedScan(line, found, 4);
-      changed += 1;
-      break;
-    }
-  }
-
-  return changed ? updated : lines;
-}
-
-function applyStrictPrimaryShapePromotionRepair(lines, structure) {
-  return applyStrictPrimaryShapePromotionRuleSet(lines, structure, STRICT_PRIMARY_SHAPE_PROMOTION_RULES);
-}
-
-function applyStrictPrimaryShapePromotionRepairWave2(lines, structure) {
-  return applyStrictPrimaryShapePromotionRuleSet(lines, structure, STRICT_PRIMARY_SHAPE_PROMOTION_RULES_WAVE2);
-}
-
-function applyStrictPrimaryShapePromotionRepairWave3(lines, structure) {
-  return applyStrictPrimaryShapePromotionRuleSet(lines, structure, STRICT_PRIMARY_SHAPE_PROMOTION_RULES_WAVE3);
-}
-
-function applyStrictPrimaryShapePromotionRuleSet(lines, structure, rules) {
-  const nonBlankIndexes = (structure?.lineObjects || []).filter((line) => !line.blank).map((line) => line.index);
-  if (!nonBlankIndexes.length || !rules.length) {
-    return lines;
-  }
-
-  const updated = [...lines];
-  let changed = 0;
-  for (const index of nonBlankIndexes) {
-    const line = updated[index];
-    const top = line?.scans?.[0];
-    if (!top) {
-      continue;
-    }
-
-    const shape = linePromotionFeatures(structure, index);
-    for (const rule of rules) {
-      if (rule.topMeterKey && top.meterKey !== rule.topMeterKey) {
-        continue;
-      }
-      if (rule.topOrigin && top.origin !== rule.topOrigin) {
-        continue;
-      }
-      if (!matchesObservationRule(top.observations, rule.topObservations)) {
-        continue;
-      }
-      if (rule.topSurfaceLength != null && countStressSymbols(top.surfaceStressPattern || top.stressPattern) !== rule.topSurfaceLength) {
-        continue;
-      }
-      if (rule.topStartsStrong != null && scanStartsStrong(top) !== rule.topStartsStrong) {
-        continue;
-      }
-      if (rule.tokenCount != null && shape.tokenCount !== rule.tokenCount) {
-        continue;
-      }
-      if (rule.firstTokenFunction != null && shape.firstTokenFunction !== rule.firstTokenFunction) {
-        continue;
-      }
-      if (rule.firstBigram && shape.firstBigram !== rule.firstBigram) {
-        continue;
-      }
-
-      const targetMeter = rule.candidateMeterKey === 'SAME' || !rule.candidateMeterKey
-        ? top.meterKey
-        : rule.candidateMeterKey;
-      const found = (line.scans || []).find((scan, scanIndex) => {
-        if (scanIndex <= 0) {
-          return false;
-        }
-        if (rule.maxIndex != null && scanIndex > rule.maxIndex) {
-          return false;
-        }
-        if (scan.meterKey !== targetMeter) {
-          return false;
-        }
-        if (rule.candidateOrigin && scan.origin !== rule.candidateOrigin) {
-          return false;
-        }
-        if (!matchesObservationRule(scan.observations, rule.candidateObservations)) {
-          return false;
-        }
-        if (rule.candidateSurfaceLength != null && countStressSymbols(scan.surfaceStressPattern || scan.stressPattern) !== rule.candidateSurfaceLength) {
-          return false;
-        }
-        if (rule.candidateStartsStrong != null && scanStartsStrong(scan) !== rule.candidateStartsStrong) {
           return false;
         }
         if (exceedsPromotionScoreGap(top, scan, rule.maxScoreGap)) {
@@ -9850,3 +9569,4 @@ function json(body, status = 200) {
     })
   });
 }
+

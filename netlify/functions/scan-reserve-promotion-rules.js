@@ -47,22 +47,6 @@ export const STRICT_RESERVE_PROMOTION_RULES = [
   {
     "topMeterKey": "iambic_pentameter",
     "topOrigin": "concatenative",
-    "topObservations": [
-      "inversion"
-    ],
-    "candidateOrigin": "line",
-    "candidateObservations": [
-      "pyrrhic substitution",
-      "spondaic substitution"
-    ],
-    "maxReserveIndex": 0,
-    "maxScoreGap": 15.2,
-    "minRerankerDiff": 0.059825,
-    "surfaceDelta": 0
-  },
-  {
-    "topMeterKey": "iambic_pentameter",
-    "topOrigin": "concatenative",
     "topObservations": [],
     "candidateMeterKey": "dactylic_tetrameter",
     "candidateOrigin": "concatenative",

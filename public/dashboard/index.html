@@ -619,10 +619,11 @@
           }
 
           state.report = await response.json();
-          populateDifficultyOptions(state.report.summary.byDifficulty);
+          const summary = normalizeSummary(state.report);
+          populateDifficultyOptions(summary.byDifficulty);
           renderHero(state.report);
           renderMetrics(state.report);
-          renderDifficultyTable(state.report.summary.byDifficulty);
+          renderDifficultyTable(summary.byDifficulty);
           refreshLines();
         } catch (error) {
           heroMeta.innerHTML = `<span class="hero-chip">${escapeHtml(error.message || 'Failed to load dashboard report.')}</span>`;
@@ -633,10 +634,11 @@
       }
 
       function renderHero(report) {
-        const overall = report.summary.overall;
+        const overall = normalizeSummary(report).overall;
+        const lineCount = Number(report.lineCount || overall.lines || 0);
         heroMeta.innerHTML = [
           heroChip(`${report.corpusSize} poems`),
-          heroChip(`${report.lineCount} lines`),
+          heroChip(`${lineCount} lines`),
           heroChip(`${percent(overall.passRate)} exact canonical line accuracy`),
           heroChip(`Generated ${formatDate(report.generatedAt)}`),
           heroChip(`App ${report.appVersion}`)
@@ -644,10 +646,11 @@
       }
 
       function renderMetrics(report) {
-        const overall = report.summary.overall;
-        const easy = report.summary.byDifficulty.find((entry) => entry.key === 'WARMING UP');
-        const moving = report.summary.byDifficulty.find((entry) => entry.key === 'MOVING ALONG');
-        const challenge = report.summary.byDifficulty.find((entry) => entry.key === 'SPECIAL CHALLENGE');
+        const summary = normalizeSummary(report);
+        const overall = summary.overall;
+        const easy = summary.byDifficulty.find((entry) => entry.key === 'WARMING UP');
+        const moving = summary.byDifficulty.find((entry) => entry.key === 'MOVING ALONG');
+        const challenge = summary.byDifficulty.find((entry) => entry.key === 'SPECIAL CHALLENGE');
 
         metricGrid.innerHTML = [
           renderMetricCard('Overall line pass rate', percent(overall.passRate), `${overall.passLines} passing / ${overall.failLines} failing`),
@@ -698,8 +701,9 @@
 
       function refreshLines() {
         if (!state.report) return;
+        const reportLines = Array.isArray(state.report.lines) ? state.report.lines : [];
 
-        state.filtered = state.report.lines
+        state.filtered = reportLines
           .filter((line) => {
             if (state.difficulty !== 'all' && line.difficulty !== state.difficulty) return false;
             if (state.status === 'pass' && !line.pass) return false;
@@ -758,7 +762,7 @@
             <div class="line-top">
               <div class="line-title-wrap">
                 <div class="line-poem">${escapeHtml(line.poemTitle)}</div>
-                <div class="line-meta">${escapeHtml(line.author)} · ${escapeHtml(line.difficulty)} · line ${line.lineNumber}</div>
+                <div class="line-meta">${escapeHtml(line.author)} / ${escapeHtml(line.difficulty)} / line ${line.lineNumber}</div>
               </div>
               <div class="status-pill ${line.pass ? 'pass' : 'fail'}">${line.pass ? 'pass' : 'fail'}</div>
             </div>
@@ -842,6 +846,77 @@
 
       function formatMeter(value) {
         return String(value || '').replaceAll('_', ' ');
+      }
+
+      function normalizeSummary(report) {
+        const raw = report?.summary || {};
+        if (raw.overall && Array.isArray(raw.byDifficulty)) {
+          return raw;
+        }
+
+        const fallbackLines = Array.isArray(report?.lines) ? report.lines : [];
+        const difficultyOrder = ['WARMING UP', 'MOVING ALONG', 'SPECIAL CHALLENGE'];
+        const poemsByDifficulty = new Map();
+        const byDifficulty = difficultyOrder
+          .map((key) => {
+            const rows = fallbackLines.filter((line) => line.difficulty === key);
+            const poemIds = new Set();
+            const perfectPoemIds = new Set();
+            for (const row of rows) {
+              const poemId = row.slug || `${row.poemTitle}::${row.author}`;
+              poemIds.add(poemId);
+              if (row.pass) {
+                if (!poemsByDifficulty.has(poemId)) {
+                  poemsByDifficulty.set(poemId, { key, total: 0, pass: 0 });
+                }
+                poemsByDifficulty.get(poemId).pass += 1;
+              }
+              if (!poemsByDifficulty.has(poemId)) {
+                poemsByDifficulty.set(poemId, { key, total: 0, pass: 0 });
+              }
+              poemsByDifficulty.get(poemId).total += 1;
+            }
+
+            for (const [poemId, stats] of poemsByDifficulty.entries()) {
+              if (stats.key === key && stats.total > 0 && stats.pass === stats.total) {
+                perfectPoemIds.add(poemId);
+              }
+            }
+
+            const passLines = rows.filter((line) => line.pass).length;
+            return {
+              key,
+              poems: poemIds.size,
+              perfectPoems: perfectPoemIds.size,
+              lines: rows.length,
+              passLines,
+              failLines: rows.length - passLines,
+              passRate: rows.length ? passLines / rows.length : 0
+            };
+          })
+          .filter((row) => row.lines > 0);
+
+        const totalLines = fallbackLines.length;
+        const passLines = fallbackLines.filter((line) => line.pass).length;
+        const poemIds = new Set(fallbackLines.map((line) => line.slug || `${line.poemTitle}::${line.author}`));
+        const perfectPoemIds = new Set();
+        for (const [poemId, stats] of poemsByDifficulty.entries()) {
+          if (stats.total > 0 && stats.pass === stats.total) {
+            perfectPoemIds.add(poemId);
+          }
+        }
+
+        return {
+          overall: {
+            poems: poemIds.size || Number(report?.corpusSize || 0),
+            perfectPoems: perfectPoemIds.size,
+            lines: totalLines || Number(report?.lineCount || 0),
+            passLines,
+            failLines: Math.max(0, totalLines - passLines),
+            passRate: totalLines ? passLines / totalLines : 0
+          },
+          byDifficulty
+        };
       }
 
       function difficultyRank(value) {

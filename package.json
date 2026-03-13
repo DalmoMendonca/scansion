@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-dev.mjs",
     "dev": "netlify dev",
     "start": "npx serve public -l 4173",
     "check": "node scripts/check-scan.mjs",
