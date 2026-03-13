@@ -75,6 +75,7 @@ async function main() {
             observations: scan.observations || [],
             sources: (scan.variants || []).map((variant) => variant.source),
             pieceStress: (scan.variants || []).map((variant) => variant.stress),
+            tokenNormalized: (line.tokens || []).map((token) => token.normalized || ''),
             tokenIsFunction: (line.tokens || []).map((token) => Boolean(token.isFunctionWord)),
             lineTokenCount: (line.tokens || []).length
           }) + '\n'

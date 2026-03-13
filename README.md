@@ -7,13 +7,13 @@ GitHub: `https://github.com/DalmoMendonca/scansion`
 
 ## Accuracy against canonical standards
 
-The app achieves **68.6% exact match** against the UVA Prosody Archive canonical scansions across **1,482 lines from 101 poems** (measured March 2026). This breaks down by difficulty tier:
+The app achieves **66.5% exact match** against the UVA Prosody Archive canonical scansions across **1,482 lines from 101 poems** (measured March 2026). This breaks down by difficulty tier:
 
-- **WARMING UP** poems: 79% line accuracy (359/454 lines)
-- **MOVING ALONG** poems: 62% line accuracy (438/707 lines)
-- **SPECIAL CHALLENGE** poems: 65% line accuracy (209/321 lines)
+- **WARMING UP** poems: 76% line accuracy (345/454 lines)
+- **MOVING ALONG** poems: 60% line accuracy (424/707 lines)
+- **SPECIAL CHALLENGE** poems: 62% line accuracy (199/321 lines)
 
-### Why 68.6% is remarkable
+### Why 66.5% is remarkable
 
 Scansion is a skill that typically takes literature students **years of practice** to do well by hand. Consider what mastering it requires:
 
